@@ -1,0 +1,37 @@
+Options -Indexes
+Options -MultiViews
+
+# Block access to sensitive directories
+RewriteEngine On
+
+# Deny direct access to app internals
+RewriteRule ^app/.*$  - [F,L]
+RewriteRule ^lib/.*$  - [F,L]
+RewriteRule ^logs/.*$ - [F,L]
+RewriteRule ^print-service/.*$ - [F,L]
+
+# Protect sensitive files
+<FilesMatch "\.(env|log|sql|sh|ini|json|lock|md|bat|py)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Block access to hidden files/directories (starting with .)
+RewriteRule (^|/)\. - [F,L]
+
+# Front controller: route all non-file, non-dir requests to index.php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php?url=$1 [QSA,L]
+
+# Force HTTPS
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+# Security headers
+<IfModule mod_headers.c>
+    Header always set X-Frame-Options "DENY"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set X-XSS-Protection "1; mode=block"
+</IfModule>

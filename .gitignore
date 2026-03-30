@@ -1,0 +1,4 @@
+.env
+logs/
+public/uploads/pos/*
+!public/uploads/pos/.gitkeep

@@ -1,0 +1,48 @@
+Migrate Existing POS Machine to Standardized Directory Structure
+=================================================================
+
+Run these steps on the existing Beelink (POS-1) AFTER copying
+the template files to C:\POS\ via USB.
+
+1. Stop the service
+-------------------
+nssm stop POSPrintService
+
+2. Back up the working files
+-----------------------------
+copy "C:\Users\Loose tea machine\print_server.py" "C:\Users\Loose tea machine\print_server.py.bak"
+
+3. Copy template files to C:\POS\
+-----------------------------------
+The new structure should be:
+
+  C:\POS\
+    config.ini
+    print-service\print_server.py
+    print-service\escpos_helpers.py
+    print-service\requirements.txt
+    logs\print_service.log
+    setup\nssm.exe
+    setup\kiosk.bat
+
+4. Re-register the service
+---------------------------
+nssm remove POSPrintService confirm
+nssm install POSPrintService "python.exe" "print_server.py"
+nssm set POSPrintService AppDirectory "C:\POS\print-service"
+nssm set POSPrintService DisplayName "POS Print Service"
+nssm set POSPrintService Start SERVICE_AUTO_START
+nssm set POSPrintService AppStdout "C:\POS\logs\print_service.log"
+nssm set POSPrintService AppStderr "C:\POS\logs\print_service.log"
+nssm start POSPrintService
+
+5. Verify
+----------
+curl http://localhost:5000/health
+curl -X POST http://localhost:5000/print/test
+curl -X POST http://localhost:5000/print/open-drawer
+
+6. Clean up (only after everything works)
+-------------------------------------------
+del "C:\Users\Loose tea machine\print_server.py"
+del "C:\Users\Loose tea machine\print_server.py.bak"

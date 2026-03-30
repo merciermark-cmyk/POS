@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>POS Terminal Mockup</title>
+    <link rel="stylesheet" href="public/vendor/bootstrap/css/bootstrap.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { overflow: hidden; height: 100vh; background: #f0f0f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+
+        .pos-terminal { display: flex; flex-direction: column; height: 100vh; }
+
+        .pos-header {
+            background: #1a1a2e;
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        .pos-header .brand { color: #fff; font-size: 1.2rem; font-weight: 700; }
+        .pos-header .cashier { color: rgba(255,255,255,0.7); font-size: 0.9rem; margin-left: 20px; }
+        .pos-header .actions { display: flex; gap: 8px; }
+        .pos-header .actions .btn { font-size: 0.8rem; padding: 6px 14px; }
+
+        .pos-main { display: flex; flex: 1; overflow: hidden; }
+
+        /* Left: Products */
+        .pos-products { flex: 0 0 60%; display: flex; flex-direction: column; background: #fff; }
+
+        .pos-categories {
+            display: flex; gap: 6px; padding: 10px 12px;
+            background: #f8f9fa; border-bottom: 1px solid #dee2e6; flex-shrink: 0;
+        }
+        .cat-btn {
+            padding: 8px 18px; border-radius: 8px; border: 2px solid #0d6efd;
+            background: transparent; color: #0d6efd; font-weight: 600; font-size: 0.9rem;
+            cursor: pointer; white-space: nowrap;
+        }
+        .cat-btn.active { background: #0d6efd; color: #fff; }
+
+        .pos-search {
+            padding: 8px 12px; background: #f8f9fa; flex-shrink: 0;
+        }
+        .pos-search input {
+            width: 100%; padding: 10px 14px; font-size: 1rem; border: 1px solid #ced4da;
+            border-radius: 6px; outline: none;
+        }
+
+        .pos-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 10px; padding: 12px; overflow-y: auto; flex: 1;
+        }
+
+        .product-card {
+            border: 2px solid #dee2e6; border-radius: 10px; padding: 10px;
+            text-align: center; cursor: pointer; background: #fff;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            min-height: 135px; transition: all 0.15s;
+        }
+        .product-card:hover { border-color: #0d6efd; box-shadow: 0 2px 8px rgba(13,110,253,0.2); }
+
+        .product-icon {
+            width: 60px; height: 60px; border-radius: 8px; background: #e9ecef;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.5rem; margin-bottom: 6px;
+        }
+        .product-name { font-size: 0.82rem; font-weight: 600; line-height: 1.2; margin-bottom: 3px; color: #333; }
+        .product-price { font-size: 0.88rem; color: #198754; font-weight: 700; }
+        .product-tax { font-size: 0.65rem; color: #999; }
+
+        /* Right: Cart */
+        .pos-cart {
+            flex: 0 0 40%; display: flex; flex-direction: column;
+            background: #fff; border-left: 2px solid #dee2e6;
+        }
+
+        .cart-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 16px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; flex-shrink: 0;
+        }
+        .cart-header h5 { margin: 0; font-weight: 700; }
+        .cart-badge { background: #0d6efd; color: #fff; border-radius: 12px; padding: 2px 10px; font-size: 0.8rem; }
+
+        .cart-items { flex: 1; overflow-y: auto; padding: 8px 12px; }
+
+        .cart-item {
+            padding: 10px 0; border-bottom: 1px solid #f0f0f0;
+            display: flex; justify-content: space-between; align-items: flex-start;
+        }
+        .cart-item:last-child { border-bottom: none; }
+        .cart-item-name { font-weight: 600; font-size: 0.9rem; color: #333; }
+        .cart-item-detail { font-size: 0.8rem; color: #666; margin-top: 3px; }
+        .cart-item-tax { font-size: 0.75rem; color: #999; }
+        .cart-item-total { font-weight: 700; font-size: 0.95rem; text-align: right; }
+
+        .qty-controls { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+        .qty-btn {
+            width: 32px; height: 32px; border-radius: 50%; border: 1px solid #ccc;
+            background: #fff; font-size: 1rem; font-weight: bold; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; color: #333;
+        }
+        .qty-num { font-weight: 700; font-size: 1rem; min-width: 20px; text-align: center; }
+        .remove-btn {
+            width: 28px; height: 28px; border-radius: 50%; border: 1px solid #dc3545;
+            background: #fff; color: #dc3545; font-size: 0.9rem; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; margin-top: 4px;
+        }
+
+        .cart-totals {
+            padding: 12px 16px; border-top: 2px solid #dee2e6; background: #f8f9fa; flex-shrink: 0;
+        }
+        .total-row { display: flex; justify-content: space-between; padding: 2px 0; font-size: 0.9rem; }
+        .total-row.muted { color: #888; font-size: 0.85rem; }
+        .total-row.grand {
+            font-size: 1.6rem; font-weight: 800; padding-top: 6px; color: #1a1a2e;
+        }
+
+        .cart-actions {
+            display: flex; gap: 10px; padding: 12px 16px; background: #f8f9fa;
+            border-top: 1px solid #dee2e6; flex-shrink: 0;
+        }
+        .cart-actions .btn-action {
+            flex: 1; min-height: 58px; font-size: 1.3rem; font-weight: 700;
+            border: none; border-radius: 8px; cursor: pointer;
+        }
+        .btn-clear { background: #dc3545; color: #fff; flex: 0.4 !important; }
+        .btn-pay { background: #198754; color: #fff; }
+    </style>
+</head>
+<body>
+<div class="pos-terminal">
+    <!-- Header -->
+    <div class="pos-header">
+        <div style="display:flex;align-items:center">
+            <span class="brand">Granville Island Tea Co. POS</span>
+            <span class="cashier">Cashier: Jane</span>
+        </div>
+        <div class="actions">
+            <button class="btn btn-outline-light btn-sm">History</button>
+            <button class="btn btn-outline-warning btn-sm">Close Shift</button>
+            <button class="btn btn-outline-secondary btn-sm">Lock</button>
+        </div>
+    </div>
+
+    <div class="pos-main">
+        <!-- Product Grid -->
+        <div class="pos-products">
+            <div class="pos-categories">
+                <button class="cat-btn active">All</button>
+                <button class="cat-btn">Loose Tea</button>
+                <button class="cat-btn">Beverages</button>
+                <button class="cat-btn">Accessories</button>
+                <button class="cat-btn">Gift Sets</button>
+                <button class="cat-btn">Samples</button>
+            </div>
+            <div class="pos-search">
+                <input type="text" placeholder="Search products...">
+            </div>
+            <div class="pos-grid">
+                <div class="product-card">
+                    <div class="product-icon">🍃</div>
+                    <div class="product-name">Earl Grey Cream</div>
+                    <div class="product-price">$12.50</div>
+                </div>
+                <div class="product-card">
+                    <div class="product-icon">🍵</div>
+                    <div class="product-name">Jasmine Dragon Pearl</div>
+                    <div class="product-price">$18.00</div>
+                </div>
+                <div class="product-card">
+                    <div class="product-icon">🌿</div>
+                    <div class="product-name">Organic Sencha</div>
+                    <div class="product-price">$14.00</div>
+                </div>
+                <div class="product-card" style="border-color:#0d6efd; background:#e8f0fe">
+                    <div class="product-icon">🍃</div>
+                    <div class="product-name">English Breakfast</div>
+                    <div class="product-price">$11.00</div>
+                </div>
+                <div class="product-card">
+                    <div class="product-icon">🫖</div>
+                    <div class="product-name">Moroccan Mint</div>
+                    <div class="product-price">$13.00</div>
+                </div>
+                <div class="product-card">
+                    <div class="product-icon">☕</div>
+                    <div class="product-name">Matcha Latte</div>
+                    <div class="product-price">$6.50</div>
+                    <div class="product-tax">GST</div>
+                </div>
+                <div class="product-card">
+                    <div class="product-icon">🍃</div>
+                    <div class="product-name">Chamomile Bliss</div>
+                    <div class="product-price">$10.50</div>
+                </div>
+                <div class="product-card">
+                    <div class="product-icon">🧋</div>
+                    <div class="product-name">Chai Latte</div>
+                    <div class="product-price">$6.00</div>
+                    <div class="product-tax">GST</div>
+                </div>
+                <div class="product-card">
+                    <div class="product-icon">🍃</div>
+                    <div class="product-name">Rooibos Vanilla</div>
+                    <div class="product-price">$12.00</div>
+                </div>
+                <div class="product-card">
+                    <div class="product-icon">🫖</div>
+                    <div class="product-name">Cast Iron Teapot</div>
+                    <div class="product-price">$45.00</div>
+                    <div class="product-tax">GST+PST</div>
+                </div>
+                <div class="product-card">
+                    <div class="product-icon">🍃</div>
+                    <div class="product-name">Oolong Ti Kuan Yin</div>
+                    <div class="product-price">$16.00</div>
+                </div>
+                <div class="product-card">
+                    <div class="product-icon">☕</div>
+                    <div class="product-name">London Fog</div>
+                    <div class="product-price">$6.00</div>
+                    <div class="product-tax">GST</div>
+                </div>
+                <div class="product-card">
+                    <div class="product-icon">🍃</div>
+                    <div class="product-name">Lapsang Souchong</div>
+                    <div class="product-price">$15.00</div>
+                </div>
+                <div class="product-card">
+                    <div class="product-icon">🍃</div>
+                    <div class="product-name">Peppermint</div>
+                    <div class="product-price">$9.50</div>
+                </div>
+                <div class="product-card">
+                    <div class="product-icon">🫖</div>
+                    <div class="product-name">Glass Teapot 600ml</div>
+                    <div class="product-price">$32.00</div>
+                    <div class="product-tax">GST+PST</div>
+                </div>
+                <div class="product-card">
+                    <div class="product-icon">🎁</div>
+                    <div class="product-name">Sampler Box (6)</div>
+                    <div class="product-price">$24.00</div>
+                </div>
+                <div class="product-card">
+                    <div class="product-icon">🍃</div>
+                    <div class="product-name">Darjeeling First Flush</div>
+                    <div class="product-price">$22.00</div>
+                </div>
+                <div class="product-card">
+                    <div class="product-icon">☕</div>
+                    <div class="product-name">Hot Chocolate</div>
+                    <div class="product-price">$5.50</div>
+                    <div class="product-tax">GST</div>
+                </div>
+                <div class="product-card">
+                    <div class="product-icon">🍃</div>
+                    <div class="product-name">Gunpowder Green</div>
+                    <div class="product-price">$11.50</div>
+                </div>
+                <div class="product-card">
+                    <div class="product-icon">🫖</div>
+                    <div class="product-name">Tea Infuser Mug</div>
+                    <div class="product-price">$18.00</div>
+                    <div class="product-tax">GST+PST</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cart -->
+        <div class="pos-cart">
+            <div class="cart-header">
+                <h5>Cart</h5>
+                <span class="cart-badge">3</span>
+            </div>
+            <div class="cart-items">
+                <div class="cart-item">
+                    <div>
+                        <div class="cart-item-name">Earl Grey Cream</div>
+                        <div class="qty-controls">
+                            <button class="qty-btn">&minus;</button>
+                            <span class="qty-num">1</span>
+                            <button class="qty-btn">+</button>
+                            <span class="cart-item-detail">&times; $12.50</span>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="cart-item-total">$12.50</div>
+                        <button class="remove-btn">&times;</button>
+                    </div>
+                </div>
+                <div class="cart-item">
+                    <div>
+                        <div class="cart-item-name">Matcha Latte</div>
+                        <div class="qty-controls">
+                            <button class="qty-btn">&minus;</button>
+                            <span class="qty-num">2</span>
+                            <button class="qty-btn">+</button>
+                            <span class="cart-item-detail">&times; $6.50</span>
+                        </div>
+                        <div class="cart-item-tax">GST: $0.65</div>
+                    </div>
+                    <div>
+                        <div class="cart-item-total">$13.65</div>
+                        <button class="remove-btn">&times;</button>
+                    </div>
+                </div>
+                <div class="cart-item">
+                    <div>
+                        <div class="cart-item-name">Cast Iron Teapot</div>
+                        <div class="qty-controls">
+                            <button class="qty-btn">&minus;</button>
+                            <span class="qty-num">1</span>
+                            <button class="qty-btn">+</button>
+                            <span class="cart-item-detail">&times; $45.00</span>
+                        </div>
+                        <div class="cart-item-tax">GST: $2.25 &nbsp; PST: $3.15</div>
+                    </div>
+                    <div>
+                        <div class="cart-item-total">$50.40</div>
+                        <button class="remove-btn">&times;</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="cart-totals">
+                <div class="total-row"><span>Subtotal</span><span>$70.50</span></div>
+                <div class="total-row muted"><span>GST (5%)</span><span>$2.90</span></div>
+                <div class="total-row muted"><span>PST (7%)</span><span>$3.15</span></div>
+                <hr style="margin:6px 0">
+                <div class="total-row grand"><span>TOTAL</span><span>$76.55</span></div>
+            </div>
+
+            <div class="cart-actions">
+                <button class="btn-action btn-clear">CLEAR</button>
+                <button class="btn-action btn-pay">PAY</button>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
