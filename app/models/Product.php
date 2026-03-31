@@ -6,6 +6,7 @@ class Product extends BaseModel {
      */
     public function getAll(?int $categoryId = null, ?string $search = null): array {
         $sql = 'SELECT p.id, p.name, p.product_code, p.retail_price AS unit_price, p.tax_profile,
+                       p.track_inventory,
                        c.name AS category_name, c.id AS category_id,
                        pi.filename AS image
                 FROM products p
@@ -30,7 +31,7 @@ class Product extends BaseModel {
 
     public function findById(int $id): ?array {
         return $this->findOne(
-            'SELECT p.*, p.retail_price AS unit_price, c.name AS category_name,
+            'SELECT p.*, p.retail_price AS unit_price, p.track_inventory, c.name AS category_name,
                     pi.filename AS image
              FROM products p
              LEFT JOIN categories c ON p.category_id = c.id

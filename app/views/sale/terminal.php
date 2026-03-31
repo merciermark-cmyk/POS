@@ -5,12 +5,22 @@ ob_start();
 ?>
 <meta name="operator-timeout" content="<?= OPERATOR_TIMEOUT ?>">
 
+<!-- Beverage modifier data for JS -->
+<script>
+var POS_BEVERAGE_CAT_ID = <?= json_encode($beverageCatId) ?>;
+var POS_MODIFIERS = <?= json_encode($activeModifiers) ?>;
+var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
+</script>
+
 <div class="pos-terminal">
     <!-- Header Bar -->
     <div class="pos-header">
         <div class="d-flex align-items-center justify-content-between px-3 py-2">
             <div class="d-flex align-items-center gap-3">
                 <strong class="text-white fs-5"><?= e($settings['store_name'] ?? APP_NAME) ?></strong>
+                <?php if ($terminalName): ?>
+                    <span class="badge bg-light text-dark"><?= e($terminalName) ?></span>
+                <?php endif; ?>
                 <span class="text-light opacity-75">Cashier: <?= e(currentOperator()['username']) ?></span>
             </div>
             <div class="d-flex align-items-center gap-2">
@@ -68,7 +78,8 @@ ob_start();
                     <div class="pos-product-card" data-id="<?= $p['id'] ?>"
                          data-category="<?= $p['category_id'] ?? '' ?>"
                          data-name="<?= e(strtolower($p['name'])) ?>"
-                         data-code="<?= e(strtolower($p['product_code'] ?? '')) ?>">
+                         data-code="<?= e(strtolower($p['product_code'] ?? '')) ?>"
+                         data-price="<?= (float)$p['unit_price'] ?>">
                         <div class="pos-product-img">
                             <?php if ($p['image']): ?>
                                 <img src="<?= baseUrl('public/uploads/pos/' . $p['image']) ?>"
@@ -91,10 +102,17 @@ ob_start();
                     <h5 class="mb-0">Cart</h5>
                     <span class="badge bg-secondary" id="cartCount"><?= count($cartTotals['items']) ?></span>
                 </div>
-                <button class="btn btn-sm <?= $wholesale ? 'btn-purple' : 'btn-outline-purple' ?>"
-                        id="wholesaleToggle" title="Toggle 25% wholesale discount">
-                    WHOLESALE<?php if ($wholesale): ?> <span class="badge bg-light text-purple">-25%</span><?php endif; ?>
-                </button>
+                <div class="d-flex align-items-center gap-1">
+                    <button class="btn btn-sm <?= $cartDiscount ? 'btn-teal' : 'btn-outline-teal' ?>"
+                            id="discountToggle" title="Toggle 10% discount"
+                            <?= $wholesale ? 'disabled' : '' ?>>
+                        10% OFF<?php if ($cartDiscount): ?> <span class="badge bg-light text-teal">-10%</span><?php endif; ?>
+                    </button>
+                    <button class="btn btn-sm <?= $wholesale ? 'btn-purple' : 'btn-outline-purple' ?>"
+                            id="wholesaleToggle" title="Toggle 25% wholesale discount">
+                        WHOLESALE<?php if ($wholesale): ?> <span class="badge bg-light text-purple">-25%</span><?php endif; ?>
+                    </button>
+                </div>
             </div>
 
             <div class="pos-cart-items" id="cartItems">
@@ -104,17 +122,22 @@ ob_start();
                     </div>
                 <?php else: ?>
                     <?php foreach ($cartTotals['items'] as $item): ?>
-                        <div class="pos-cart-item" data-product-id="<?= $item['product_id'] ?>">
+                        <div class="pos-cart-item" data-cart-key="<?= e($item['cart_key'] ?? $item['product_id']) ?>">
                             <div class="d-flex justify-content-between align-items-start">
                                 <div class="flex-grow-1">
                                     <div class="fw-bold"><?= e($item['product_name']) ?></div>
+                                    <?php if (!empty($item['modifiers'])): ?>
+                                        <?php foreach ($item['modifiers'] as $mod): ?>
+                                            <div class="text-muted small ms-2">+ <?= e($mod['name']) ?> ($<?= number_format((float)$mod['price'], 2) ?>)</div>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
                                     <div class="d-flex align-items-center gap-2 mt-1">
                                         <button class="btn btn-sm btn-outline-secondary qty-btn" data-action="decrease"
-                                                data-product-id="<?= $item['product_id'] ?>">−</button>
+                                                data-cart-key="<?= e($item['cart_key'] ?? $item['product_id']) ?>">&#8722;</button>
                                         <span class="qty-display"><?= $item['quantity'] ?></span>
                                         <button class="btn btn-sm btn-outline-secondary qty-btn" data-action="increase"
-                                                data-product-id="<?= $item['product_id'] ?>">+</button>
-                                        <span class="text-muted ms-2">× $<?= number_format($item['unit_price'], 2) ?></span>
+                                                data-cart-key="<?= e($item['cart_key'] ?? $item['product_id']) ?>">+</button>
+                                        <span class="text-muted ms-2">&times; $<?= number_format($item['effective_unit_price'] ?? $item['unit_price'], 2) ?></span>
                                     </div>
                                     <?php if ($item['gst'] > 0): ?>
                                         <small class="text-muted">GST: $<?= number_format($item['gst'], 2) ?></small>
@@ -126,7 +149,7 @@ ob_start();
                                 <div class="text-end">
                                     <div class="fw-bold">$<?= number_format($item['line_total'], 2) ?></div>
                                     <button class="btn btn-sm btn-outline-danger mt-1 remove-btn"
-                                            data-product-id="<?= $item['product_id'] ?>">×</button>
+                                            data-cart-key="<?= e($item['cart_key'] ?? $item['product_id']) ?>">&#215;</button>
                                 </div>
                             </div>
                         </div>
@@ -158,6 +181,35 @@ ob_start();
                 <button class="btn btn-outline-danger btn-lg flex-fill" id="clearCartBtn">CLEAR</button>
                 <button class="btn btn-success btn-lg flex-fill" id="payBtn"
                         <?= empty($cartTotals['items']) ? 'disabled' : '' ?>>PAY</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modifier Modal -->
+<div class="modal fade" id="modifierModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title" id="modifierModalTitle">Customize Drink</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="modifierButtons" class="d-flex flex-wrap gap-2 mb-3">
+                    <!-- Modifier buttons rendered by JS -->
+                </div>
+                <h6>Selected:</h6>
+                <div id="modifierSelected" class="mb-3">
+                    <p class="text-muted" id="noModsMsg">None (plain)</p>
+                </div>
+                <div class="d-flex justify-content-between fw-bold fs-5">
+                    <span>Item Total:</span>
+                    <span id="modifierItemTotal">$0.00</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-lg" id="addPlainBtn">Add Plain</button>
+                <button type="button" class="btn btn-info btn-lg" id="addWithModsBtn">Add to Cart</button>
             </div>
         </div>
     </div>
@@ -233,6 +285,57 @@ ob_start();
                         Complete Sale
                     </button>
                 </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quantity Keypad Modal -->
+<div class="modal fade" id="qtyKeypadModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white py-2">
+                <h5 class="modal-title" id="qtyKeypadTitle">Quantity</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-2">
+                <!-- Mode toggle -->
+                <div class="qty-mode-toggle d-flex mb-2">
+                    <button class="btn btn-primary flex-fill qty-mode-btn active" data-mode="qty">QTY</button>
+                    <button class="btn btn-outline-primary flex-fill qty-mode-btn" data-mode="dollar">$</button>
+                </div>
+
+                <!-- Display -->
+                <div class="qty-keypad-display text-center mb-2">
+                    <div id="qtyKeypadInput" class="fs-1 fw-bold font-monospace">0</div>
+                    <div id="qtyKeypadPreview" class="text-muted small" style="display:none"></div>
+                </div>
+
+                <!-- Quick dollar buttons ($ mode only) -->
+                <div id="qtyQuickDollars" class="d-flex gap-2 mb-2" style="display:none !important">
+                    <button class="btn btn-outline-success flex-fill quick-dollar-btn" data-amount="5">$5</button>
+                    <button class="btn btn-outline-success flex-fill quick-dollar-btn" data-amount="10">$10</button>
+                    <button class="btn btn-outline-success flex-fill quick-dollar-btn" data-amount="20">$20</button>
+                </div>
+
+                <!-- Numpad grid -->
+                <div class="qty-keypad-grid">
+                    <button class="btn btn-light qty-keypad-btn" data-key="7">7</button>
+                    <button class="btn btn-light qty-keypad-btn" data-key="8">8</button>
+                    <button class="btn btn-light qty-keypad-btn" data-key="9">9</button>
+                    <button class="btn btn-outline-danger qty-keypad-btn" data-key="backspace">&#9003;</button>
+                    <button class="btn btn-light qty-keypad-btn" data-key="4">4</button>
+                    <button class="btn btn-light qty-keypad-btn" data-key="5">5</button>
+                    <button class="btn btn-light qty-keypad-btn" data-key="6">6</button>
+                    <button class="btn btn-outline-secondary qty-keypad-btn" data-key="clear">C</button>
+                    <button class="btn btn-light qty-keypad-btn" data-key="1">1</button>
+                    <button class="btn btn-light qty-keypad-btn" data-key="2">2</button>
+                    <button class="btn btn-light qty-keypad-btn" data-key="3">3</button>
+                    <button class="btn btn-info text-white qty-keypad-btn" data-key="half">&frac12;</button>
+                    <button class="btn btn-light qty-keypad-btn" data-key="0">0</button>
+                    <button class="btn btn-light qty-keypad-btn" data-key=".">.</button>
+                    <button class="btn btn-success text-white qty-keypad-btn qty-keypad-confirm" data-key="confirm" style="grid-column: span 2;">OK</button>
+                </div>
             </div>
         </div>
     </div>

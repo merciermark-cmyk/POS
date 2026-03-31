@@ -11,7 +11,8 @@ class Transaction extends BaseModel {
         array $items,
         array $payments,
         int   $locationId,
-        bool  $wholesale = false
+        bool  $wholesale = false,
+        bool  $cartDiscount = false
     ): int {
         $this->beginTransaction();
         try {
@@ -27,55 +28,83 @@ class Transaction extends BaseModel {
             $total = round($subtotal + $gstTotal + $pstTotal, 2);
 
             // Insert transaction
+            $terminalId = $_SESSION['pos_terminal_id'] ?? null;
+            $txnDiscountPct = $cartDiscount ? 10 : 0;
             $txnId = (int)$this->insert(
-                'INSERT INTO pos_transactions (shift_id, user_id, subtotal, gst_amount, pst_amount, total, status, is_wholesale)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                [$shiftId, $userId, round($subtotal, 2), round($gstTotal, 2), round($pstTotal, 2), $total, 'completed', $wholesale ? 1 : 0]
+                'INSERT INTO pos_transactions (shift_id, user_id, terminal_id, subtotal, gst_amount, pst_amount, total, status, is_wholesale, discount_percent)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [$shiftId, $userId, $terminalId, round($subtotal, 2), round($gstTotal, 2), round($pstTotal, 2), $total, 'completed', $wholesale ? 1 : 0, $txnDiscountPct]
             );
 
             // Insert items + deduct inventory
             $inventory = new Inventory();
             $audit     = new AuditLog();
+            $modifierModel = new Modifier();
+
+            // Batch-fetch track_inventory flags for all products in this transaction
+            $productIds = array_unique(array_column($items, 'product_id'));
+            $trackMap = [];
+            if ($productIds) {
+                $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+                $rows = $this->findAll(
+                    "SELECT id, track_inventory FROM products WHERE id IN ($placeholders)",
+                    array_values($productIds)
+                );
+                foreach ($rows as $r) {
+                    $trackMap[(int)$r['id']] = (int)$r['track_inventory'];
+                }
+            }
 
             foreach ($items as $item) {
+                // Use effective_unit_price (base + modifiers) as the stored unit_price
+                $storedUnitPrice = $item['effective_unit_price'] ?? $item['unit_price'];
                 $lineTotal = round($item['subtotal'] + $item['gst'] + $item['pst'], 2);
-                $this->insert(
+                $itemDiscountPct = (float)($item['discount_percent'] ?? 0);
+                $itemId = (int)$this->insert(
                     'INSERT INTO pos_transaction_items
                      (transaction_id, product_id, product_name, product_code, quantity,
-                      unit_price, tax_profile, gst, pst, line_total)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                      unit_price, tax_profile, gst, pst, line_total, discount_percent)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     [
                         $txnId,
                         $item['product_id'],
                         $item['product_name'],
                         $item['product_code'] ?? '',
                         $item['quantity'],
-                        $item['unit_price'],
+                        $storedUnitPrice,
                         $item['tax_profile'],
                         $item['gst'],
                         $item['pst'],
                         $lineTotal,
+                        $itemDiscountPct,
                     ]
                 );
 
-                // Deduct inventory (allows negative)
-                [$before, $after] = $inventory->adjustStock(
-                    $item['product_id'],
-                    $locationId,
-                    -$item['quantity']
-                );
+                // Save modifiers for this transaction item
+                if (!empty($item['modifiers'])) {
+                    $modifierModel->saveTransactionItemModifiers($itemId, $item['modifiers']);
+                }
 
-                $audit->record(
-                    $userId,
-                    $item['product_id'],
-                    $locationId,
-                    'pos_sale',
-                    $before,
-                    -$item['quantity'],
-                    $after,
-                    'POS sale',
-                    $txnId
-                );
+                // Deduct inventory only for tracked products
+                if (($trackMap[(int)$item['product_id']] ?? 1) === 1) {
+                    [$before, $after] = $inventory->adjustStock(
+                        $item['product_id'],
+                        $locationId,
+                        -$item['quantity']
+                    );
+
+                    $audit->record(
+                        $userId,
+                        $item['product_id'],
+                        $locationId,
+                        'pos_sale',
+                        $before,
+                        -$item['quantity'],
+                        $after,
+                        'POS sale',
+                        $txnId
+                    );
+                }
             }
 
             // Insert payments
@@ -86,6 +115,19 @@ class Transaction extends BaseModel {
                     [$txnId, $pay['method'], $pay['amount'], $pay['reference'] ?? null]
                 );
             }
+
+            // Compute daily / monthly / annual sale numbers
+            $counters = $this->findOne(
+                "SELECT
+                    (SELECT COUNT(*) FROM pos_transactions WHERE status = 'completed' AND DATE(created_at) = CURDATE() AND id < ?) + 1 AS daily_number,
+                    (SELECT COUNT(*) FROM pos_transactions WHERE status = 'completed' AND YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE()) AND id < ?) + 1 AS monthly_number,
+                    (SELECT COUNT(*) FROM pos_transactions WHERE status = 'completed' AND YEAR(created_at) = YEAR(CURDATE()) AND id < ?) + 1 AS annual_number",
+                [$txnId, $txnId, $txnId]
+            );
+            $this->execute(
+                'UPDATE pos_transactions SET daily_number = ?, monthly_number = ?, annual_number = ? WHERE id = ?',
+                [(int)$counters['daily_number'], (int)$counters['monthly_number'], (int)$counters['annual_number'], $txnId]
+            );
 
             $this->commit();
             return $txnId;
@@ -134,7 +176,7 @@ class Transaction extends BaseModel {
 
         foreach ($refundItems as $ri) {
             $itemId = (int)$ri['item_id'];
-            $qty    = (int)$ri['quantity'];
+            $qty    = (float)$ri['quantity'];
             if ($qty <= 0) continue;
 
             if (!isset($itemsById[$itemId])) {
@@ -143,7 +185,7 @@ class Transaction extends BaseModel {
 
             $origItem      = $itemsById[$itemId];
             $alreadyQty    = $alreadyRefunded[$itemId] ?? 0;
-            $maxRefundable = (int)$origItem['quantity'] - $alreadyQty;
+            $maxRefundable = (float)$origItem['quantity'] - $alreadyQty;
 
             if ($qty > $maxRefundable) {
                 throw new RuntimeException("Cannot refund $qty of \"{$origItem['product_name']}\" — only $maxRefundable remaining.");
@@ -197,6 +239,20 @@ class Transaction extends BaseModel {
             $inventory = new Inventory();
             $audit     = new AuditLog();
 
+            // Batch-fetch track_inventory flags
+            $refundProductIds = array_unique(array_column($refundRows, 'product_id'));
+            $trackMap = [];
+            if ($refundProductIds) {
+                $placeholders = implode(',', array_fill(0, count($refundProductIds), '?'));
+                $rows = $this->findAll(
+                    "SELECT id, track_inventory FROM products WHERE id IN ($placeholders)",
+                    array_values($refundProductIds)
+                );
+                foreach ($rows as $r) {
+                    $trackMap[(int)$r['id']] = (int)$r['track_inventory'];
+                }
+            }
+
             foreach ($refundRows as $row) {
                 $this->insert(
                     'INSERT INTO pos_refund_items
@@ -217,24 +273,26 @@ class Transaction extends BaseModel {
                     ]
                 );
 
-                // Return stock
-                [$before, $after] = $inventory->adjustStock(
-                    $row['product_id'],
-                    $locationId,
-                    $row['quantity'] // positive = return to stock
-                );
+                // Return stock only for tracked products
+                if (($trackMap[(int)$row['product_id']] ?? 1) === 1) {
+                    [$before, $after] = $inventory->adjustStock(
+                        $row['product_id'],
+                        $locationId,
+                        $row['quantity'] // positive = return to stock
+                    );
 
-                $audit->record(
-                    $refundedBy,
-                    $row['product_id'],
-                    $locationId,
-                    'pos_refund',
-                    $before,
-                    $row['quantity'],
-                    $after,
-                    "Refund: $reason",
-                    $txnId
-                );
+                    $audit->record(
+                        $refundedBy,
+                        $row['product_id'],
+                        $locationId,
+                        'pos_refund',
+                        $before,
+                        $row['quantity'],
+                        $after,
+                        "Refund: $reason",
+                        $txnId
+                    );
+                }
             }
 
             // Insert refund payments
@@ -251,7 +309,7 @@ class Transaction extends BaseModel {
             $fullyRefunded = true;
             foreach ($items as $item) {
                 $refQty = $allRefunded[(int)$item['id']] ?? 0;
-                if ($refQty < (int)$item['quantity']) {
+                if ($refQty < (float)$item['quantity']) {
                     $fullyRefunded = false;
                     break;
                 }
@@ -287,7 +345,7 @@ class Transaction extends BaseModel {
         );
         $map = [];
         foreach ($rows as $row) {
-            $map[(int)$row['original_item_id']] = (int)$row['refunded_qty'];
+            $map[(int)$row['original_item_id']] = (float)$row['refunded_qty'];
         }
         return $map;
     }
@@ -348,7 +406,23 @@ class Transaction extends BaseModel {
             $inventory = new Inventory();
             $audit     = new AuditLog();
 
+            // Batch-fetch track_inventory flags
+            $productIds = array_unique(array_column($items, 'product_id'));
+            $trackMap = [];
+            if ($productIds) {
+                $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+                $rows = $this->findAll(
+                    "SELECT id, track_inventory FROM products WHERE id IN ($placeholders)",
+                    array_values($productIds)
+                );
+                foreach ($rows as $r) {
+                    $trackMap[(int)$r['id']] = (int)$r['track_inventory'];
+                }
+            }
+
             foreach ($items as $item) {
+                if (($trackMap[(int)$item['product_id']] ?? 1) === 0) continue;
+
                 [$before, $after] = $inventory->adjustStock(
                     $item['product_id'],
                     $locationId,
@@ -392,6 +466,25 @@ class Transaction extends BaseModel {
         );
     }
 
+    /**
+     * Get transaction items with their modifiers attached.
+     * Each item gets a 'modifiers' key with an array of modifier rows.
+     */
+    public function getItemsWithModifiers(int $txnId): array {
+        $items = $this->getItems($txnId);
+        if (empty($items)) return $items;
+
+        $itemIds = array_map(fn($i) => (int)$i['id'], $items);
+        $modMap = (new Modifier())->getModifiersForTransactionItems($itemIds);
+
+        foreach ($items as &$item) {
+            $item['modifiers'] = $modMap[(int)$item['id']] ?? [];
+        }
+        unset($item);
+
+        return $items;
+    }
+
     public function getPayments(int $txnId): array {
         return $this->findAll(
             'SELECT * FROM pos_payments WHERE transaction_id = ? ORDER BY id',
@@ -433,18 +526,21 @@ class Transaction extends BaseModel {
         return $this->findAll($sql, $params);
     }
 
-    public function getDailySales(?string $date = null): array {
+    public function getDailySales(?string $date = null, ?int $terminalId = null): array {
         $date = $date ?: date('Y-m-d');
-        return $this->findOne(
-            'SELECT COUNT(*) AS count,
+        $sql = "SELECT COUNT(*) AS count,
                     COALESCE(SUM(subtotal), 0) AS subtotal,
                     COALESCE(SUM(gst_amount), 0) AS gst,
                     COALESCE(SUM(pst_amount), 0) AS pst,
                     COALESCE(SUM(total), 0) AS total
              FROM pos_transactions
-             WHERE DATE(created_at) = ? AND status IN ('completed','partial_refund')',
-            [$date]
-        ) ?: ['count' => 0, 'subtotal' => 0, 'gst' => 0, 'pst' => 0, 'total' => 0];
+             WHERE DATE(created_at) = ? AND status IN ('completed','partial_refund')";
+        $params = [$date];
+        if ($terminalId) {
+            $sql .= ' AND terminal_id = ?';
+            $params[] = $terminalId;
+        }
+        return $this->findOne($sql, $params) ?: ['count' => 0, 'subtotal' => 0, 'gst' => 0, 'pst' => 0, 'total' => 0];
     }
 
     /**
@@ -469,37 +565,95 @@ class Transaction extends BaseModel {
         );
     }
 
-    public function getDailyCategorySales(string $date): array {
-        return $this->getCategorySales('AND DATE(t.created_at) = ?', [$date]);
+    public function getDailyCategorySales(string $date, ?int $terminalId = null): array {
+        $where = 'AND DATE(t.created_at) = ?';
+        $params = [$date];
+        if ($terminalId) {
+            $where .= ' AND t.terminal_id = ?';
+            $params[] = $terminalId;
+        }
+        return $this->getCategorySales($where, $params);
     }
 
-    public function getMonthlyCategorySales(int $year, int $month): array {
-        return $this->getCategorySales(
-            'AND YEAR(t.created_at) = ? AND MONTH(t.created_at) = ?',
-            [$year, $month]
-        );
+    public function getMonthlyCategorySales(int $year, int $month, ?int $terminalId = null): array {
+        $where = 'AND YEAR(t.created_at) = ? AND MONTH(t.created_at) = ?';
+        $params = [$year, $month];
+        if ($terminalId) {
+            $where .= ' AND t.terminal_id = ?';
+            $params[] = $terminalId;
+        }
+        return $this->getCategorySales($where, $params);
     }
 
-    public function getMonthlySummary(int $year, int $month): array {
-        return $this->findOne(
-            'SELECT COUNT(*) AS count,
+    public function getMonthlySummary(int $year, int $month, ?int $terminalId = null): array {
+        $sql = "SELECT COUNT(*) AS count,
                     COALESCE(SUM(subtotal), 0) AS subtotal,
                     COALESCE(SUM(gst_amount), 0) AS gst,
                     COALESCE(SUM(pst_amount), 0) AS pst,
                     COALESCE(SUM(total), 0) AS total
              FROM pos_transactions
-             WHERE YEAR(created_at) = ? AND MONTH(created_at) = ? AND status IN ('completed','partial_refund')',
-            [$year, $month]
-        ) ?: ['count' => 0, 'subtotal' => 0, 'gst' => 0, 'pst' => 0, 'total' => 0];
+             WHERE YEAR(created_at) = ? AND MONTH(created_at) = ? AND status IN ('completed','partial_refund')";
+        $params = [$year, $month];
+        if ($terminalId) {
+            $sql .= ' AND terminal_id = ?';
+            $params[] = $terminalId;
+        }
+        return $this->findOne($sql, $params) ?: ['count' => 0, 'subtotal' => 0, 'gst' => 0, 'pst' => 0, 'total' => 0];
     }
 
-    public function getProductSales(?string $dateFrom = null, ?string $dateTo = null): array {
-        $sql = 'SELECT ti.product_id, ti.product_name, ti.product_code,
+    /**
+     * Insert a manual entry transaction (no items, no inventory).
+     */
+    public function insertManualEntry(array $data): int {
+        return (int)$this->insert(
+            'INSERT INTO pos_transactions (shift_id, user_id, terminal_id, subtotal, gst_amount, pst_amount, total, status, is_manual_entry, transaction_count, notes, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)',
+            [
+                $data['shift_id'],
+                $data['user_id'],
+                $data['terminal_id'],
+                $data['subtotal'],
+                $data['gst_amount'],
+                $data['pst_amount'],
+                $data['total'],
+                'completed',
+                $data['transaction_count'] ?? null,
+                $data['notes'] ?? null,
+                $data['created_at'],
+            ]
+        );
+    }
+
+    /** Insert a single payment row. */
+    public function insertPayment(int $txnId, string $method, float $amount, ?string $reference = null): void {
+        $this->insert(
+            'INSERT INTO pos_payments (transaction_id, method, amount, reference) VALUES (?, ?, ?, ?)',
+            [$txnId, $method, $amount, $reference]
+        );
+    }
+
+    /** Set daily/monthly/annual counters for a transaction. */
+    public function updateCounters(int $txnId): void {
+        $counters = $this->findOne(
+            "SELECT
+                (SELECT COUNT(*) FROM pos_transactions WHERE status = 'completed' AND DATE(created_at) = CURDATE() AND id < ?) + 1 AS daily_number,
+                (SELECT COUNT(*) FROM pos_transactions WHERE status = 'completed' AND YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE()) AND id < ?) + 1 AS monthly_number,
+                (SELECT COUNT(*) FROM pos_transactions WHERE status = 'completed' AND YEAR(created_at) = YEAR(CURDATE()) AND id < ?) + 1 AS annual_number",
+            [$txnId, $txnId, $txnId]
+        );
+        $this->execute(
+            'UPDATE pos_transactions SET daily_number = ?, monthly_number = ?, annual_number = ? WHERE id = ?',
+            [(int)$counters['daily_number'], (int)$counters['monthly_number'], (int)$counters['annual_number'], $txnId]
+        );
+    }
+
+    public function getProductSales(?string $dateFrom = null, ?string $dateTo = null, ?int $terminalId = null): array {
+        $sql = "SELECT ti.product_id, ti.product_name, ti.product_code,
                        SUM(ti.quantity) AS total_qty,
                        SUM(ti.line_total) AS total_revenue
                 FROM pos_transaction_items ti
                 JOIN pos_transactions t ON ti.transaction_id = t.id
-                WHERE t.status IN ('completed','partial_refund')';
+                WHERE t.status IN ('completed','partial_refund')";
         $params = [];
 
         if ($dateFrom) {
@@ -509,6 +663,10 @@ class Transaction extends BaseModel {
         if ($dateTo) {
             $sql .= ' AND DATE(t.created_at) <= ?';
             $params[] = $dateTo;
+        }
+        if ($terminalId) {
+            $sql .= ' AND t.terminal_id = ?';
+            $params[] = $terminalId;
         }
 
         $sql .= ' GROUP BY ti.product_id, ti.product_name, ti.product_code

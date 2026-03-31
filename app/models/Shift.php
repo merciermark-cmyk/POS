@@ -1,11 +1,11 @@
 <?php
 class Shift extends BaseModel {
 
-    public function open(int $userId, float $openingFloat): int {
+    public function open(int $userId, float $openingFloat, ?int $terminalId = null): int {
         return (int)$this->insert(
-            'INSERT INTO pos_shifts (user_id, opening_float, status)
-             VALUES (?, ?, ?)',
-            [$userId, $openingFloat, 'open']
+            'INSERT INTO pos_shifts (user_id, terminal_id, opening_float, status)
+             VALUES (?, ?, ?, ?)',
+            [$userId, $terminalId, $openingFloat, 'open']
         );
     }
 
@@ -45,26 +45,47 @@ class Shift extends BaseModel {
         );
     }
 
-    public function getAnyOpen(): ?array {
+    public function getAnyOpen(?int $terminalId = null): ?array {
+        if ($terminalId) {
+            return $this->getOpenForTerminal($terminalId);
+        }
         return $this->findOne(
-            'SELECT s.*, u.username FROM pos_shifts s
+            'SELECT s.*, u.username, tm.name AS terminal_name FROM pos_shifts s
              JOIN pos_users u ON s.user_id = u.id
+             LEFT JOIN pos_terminals tm ON s.terminal_id = tm.id
              WHERE s.status = ? ORDER BY s.id DESC LIMIT 1',
             ['open']
         );
     }
 
-    public function getHistory(int $limit = 50): array {
-        return $this->findAll(
-            "SELECT s.*, u.username,
+    public function getOpenForTerminal(int $terminalId): ?array {
+        return $this->findOne(
+            'SELECT s.*, u.username, tm.name AS terminal_name FROM pos_shifts s
+             JOIN pos_users u ON s.user_id = u.id
+             LEFT JOIN pos_terminals tm ON s.terminal_id = tm.id
+             WHERE s.terminal_id = ? AND s.status = ? ORDER BY s.id DESC LIMIT 1',
+            [$terminalId, 'open']
+        );
+    }
+
+    public function getHistory(int $limit = 50, ?int $terminalId = null): array {
+        $sql = "SELECT s.*, u.username, tm.name AS terminal_name,
                     (SELECT COUNT(*) FROM pos_transactions t WHERE t.shift_id = s.id AND t.status IN ('completed','partial_refund')) AS transaction_count,
                     (SELECT COALESCE(SUM(t.total), 0) FROM pos_transactions t WHERE t.shift_id = s.id AND t.status IN ('completed','partial_refund')) AS total_sales
              FROM pos_shifts s
              JOIN pos_users u ON s.user_id = u.id
-             ORDER BY s.opened_at DESC
-             LIMIT ?",
-            [$limit]
-        );
+             LEFT JOIN pos_terminals tm ON s.terminal_id = tm.id";
+        $params = [];
+
+        if ($terminalId) {
+            $sql .= ' WHERE s.terminal_id = ?';
+            $params[] = $terminalId;
+        }
+
+        $sql .= ' ORDER BY s.opened_at DESC LIMIT ?';
+        $params[] = $limit;
+
+        return $this->findAll($sql, $params);
     }
 
     public function getCashPaymentsTotal(int $shiftId): float {

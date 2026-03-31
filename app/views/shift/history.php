@@ -4,10 +4,29 @@ ob_start();
 ?>
 
 <h3>Shift History</h3>
+
+<?php if (!empty($terminals)): ?>
+<form class="row g-2 mb-3" method="get" action="<?= baseUrl('shift/history') ?>">
+    <div class="col-auto">
+        <select name="terminal_id" class="form-select">
+            <option value="">All Terminals</option>
+            <?php foreach ($terminals as $t): ?>
+                <option value="<?= $t['id'] ?>" <?= ($terminalId ?? null) == $t['id'] ? 'selected' : '' ?>>
+                    <?= e($t['name']) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    <div class="col-auto">
+        <button class="btn btn-primary">Filter</button>
+    </div>
+</form>
+<?php endif; ?>
+
 <table class="table table-striped">
     <thead>
         <tr>
-            <th>#</th><th>Cashier</th><th>Opened</th><th>Closed</th>
+            <th>#</th><th>Cashier</th><th>Terminal</th><th>Opened</th><th>Closed</th>
             <th class="text-end">Sales</th><th class="text-center">Txns</th>
             <th class="text-end">Over/Short</th><th>Status</th>
         </tr>
@@ -17,6 +36,7 @@ ob_start();
             <tr>
                 <td><a href="<?= baseUrl('shift/report/' . $s['id']) ?>"><?= $s['id'] ?></a></td>
                 <td><?= e($s['username']) ?></td>
+                <td><?= e($s['terminal_name'] ?? '—') ?></td>
                 <td><?= date('M j g:i A', strtotime($s['opened_at'])) ?></td>
                 <td><?= $s['closed_at'] ? date('g:i A', strtotime($s['closed_at'])) : '—' ?></td>
                 <td class="text-end">$<?= number_format($s['total_sales'], 2) ?></td>

@@ -4,11 +4,17 @@ class AuthController {
     public function staffPicker(): void {
         $shiftModel = new Shift();
 
-        // Adopt any open shift
+        // Adopt open shift for this terminal (cookie-based) or any open shift
         if (empty($_SESSION['pos_shift_id'])) {
-            $openShift = $shiftModel->getAnyOpen();
+            $terminalId = !empty($_COOKIE['pos_terminal_id']) ? (int)$_COOKIE['pos_terminal_id'] : null;
+            $openShift = $terminalId
+                ? ($shiftModel->getOpenForTerminal($terminalId) ?: $shiftModel->getAnyOpen())
+                : $shiftModel->getAnyOpen();
             if ($openShift) {
                 $_SESSION['pos_shift_id'] = $openShift['id'];
+                if ($openShift['terminal_id']) {
+                    $_SESSION['pos_terminal_id'] = $openShift['terminal_id'];
+                }
             }
         }
 
@@ -21,7 +27,10 @@ class AuthController {
 
         $shift    = $shiftModel->findById($_SESSION['pos_shift_id']);
         // Attach username from the shift opener
-        $anyOpen  = $shiftModel->getAnyOpen();
+        $terminalId = !empty($_COOKIE['pos_terminal_id']) ? (int)$_COOKIE['pos_terminal_id'] : null;
+        $anyOpen = $terminalId
+            ? ($shiftModel->getOpenForTerminal($terminalId) ?: $shiftModel->getAnyOpen())
+            : $shiftModel->getAnyOpen();
         if ($anyOpen && $anyOpen['id'] == $shift['id']) {
             $shift['username'] = $anyOpen['username'];
         }
@@ -96,10 +105,17 @@ class AuthController {
                 $_SESSION['pos_operator_role']      = $user['role'];
                 $_SESSION['operator_last_activity'] = time();
 
-                // Adopt any open shift (not just this user's)
-                $shift = (new Shift())->getAnyOpen();
+                // Adopt open shift for this terminal (cookie) or any open shift
+                $shiftModel = new Shift();
+                $terminalId = !empty($_COOKIE['pos_terminal_id']) ? (int)$_COOKIE['pos_terminal_id'] : null;
+                $shift = $terminalId
+                    ? ($shiftModel->getOpenForTerminal($terminalId) ?: $shiftModel->getAnyOpen())
+                    : $shiftModel->getAnyOpen();
                 if ($shift) {
                     $_SESSION['pos_shift_id'] = $shift['id'];
+                    if ($shift['terminal_id']) {
+                        $_SESSION['pos_terminal_id'] = $shift['terminal_id'];
+                    }
                 }
 
                 redirect('/');
@@ -139,10 +155,17 @@ class AuthController {
                     $_SESSION['pos_operator_role']      = $user['role'];
                     $_SESSION['operator_last_activity'] = time();
 
-                    // Adopt any open shift
-                    $shift = (new Shift())->getAnyOpen();
+                    // Adopt open shift for this terminal (cookie) or any open shift
+                    $shiftModel = new Shift();
+                    $terminalId = !empty($_COOKIE['pos_terminal_id']) ? (int)$_COOKIE['pos_terminal_id'] : null;
+                    $shift = $terminalId
+                        ? ($shiftModel->getOpenForTerminal($terminalId) ?: $shiftModel->getAnyOpen())
+                        : $shiftModel->getAnyOpen();
                     if ($shift) {
                         $_SESSION['pos_shift_id'] = $shift['id'];
+                        if ($shift['terminal_id']) {
+                            $_SESSION['pos_terminal_id'] = $shift['terminal_id'];
+                        }
                     }
 
                     redirect('/');
@@ -157,8 +180,9 @@ class AuthController {
     }
 
     public function logout(): void {
-        // Preserve shift so staff picker still works
-        $shiftId = $_SESSION['pos_shift_id'] ?? null;
+        // Preserve shift + terminal so staff picker still works
+        $shiftId    = $_SESSION['pos_shift_id'] ?? null;
+        $terminalId = $_SESSION['pos_terminal_id'] ?? null;
 
         session_unset();
         session_destroy();
@@ -167,15 +191,19 @@ class AuthController {
         if ($shiftId) {
             $_SESSION['pos_shift_id'] = $shiftId;
         }
+        if ($terminalId) {
+            $_SESSION['pos_terminal_id'] = $terminalId;
+        }
 
         setFlash('success', 'You have been logged out.');
         redirect('/');
     }
 
     public function lock(): void {
-        // Keep shift info but require re-auth
-        $shiftId = $_SESSION['pos_shift_id'] ?? null;
-        $userId  = $_SESSION['pos_user_id'] ?? null;
+        // Keep shift + terminal info but require re-auth
+        $shiftId    = $_SESSION['pos_shift_id'] ?? null;
+        $terminalId = $_SESSION['pos_terminal_id'] ?? null;
+        $userId     = $_SESSION['pos_user_id'] ?? null;
 
         session_unset();
         session_start();
@@ -183,6 +211,9 @@ class AuthController {
         if ($shiftId) {
             $_SESSION['locked_shift_id'] = $shiftId;
             $_SESSION['locked_user_id']  = $userId;
+        }
+        if ($terminalId) {
+            $_SESSION['pos_terminal_id'] = $terminalId;
         }
 
         redirect('/pin');

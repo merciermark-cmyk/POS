@@ -55,6 +55,9 @@ define('TAX_PST_RATE', 0.07); // 7% PST
 define('PS_DB_NAME',   getenv('PS_DB_NAME') ?: '');
 define('PS_DB_PREFIX', getenv('PS_DB_PREFIX') ?: 'ps_');
 
+// --- Beverage modifiers ---
+define('BEVERAGE_CATEGORY_NAME', 'Beverages');
+
 // --- Print service ---
 define('PRINT_SERVICE_URL', 'http://localhost:5000');
 

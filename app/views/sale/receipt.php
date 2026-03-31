@@ -16,7 +16,8 @@ ob_start();
                     </div>
                 <?php endif; ?>
 
-                <h4>Transaction #<?= $transaction['id'] ?></h4>
+                <h4>Sale #<?= $transaction['daily_number'] ?? $transaction['id'] ?></h4>
+                <p class="text-muted mb-0 small">Txn #<?= $transaction['id'] ?></p>
                 <p class="text-muted"><?= date('M j, Y g:i A', strtotime($transaction['created_at'])) ?></p>
 
                 <table class="table table-sm text-start">
@@ -26,10 +27,24 @@ ob_start();
                     <tbody>
                         <?php foreach ($items as $item): ?>
                             <tr>
-                                <td><?= e($item['product_name']) ?></td>
+                                <td>
+                                    <?= e($item['product_name']) ?>
+                                    <?php if (($item['discount_percent'] ?? 0) > 0): ?>
+                                        <span class="badge bg-success">-<?= (int)$item['discount_percent'] ?>%</span>
+                                    <?php endif; ?>
+                                </td>
                                 <td class="text-center"><?= $item['quantity'] ?></td>
                                 <td class="text-end">$<?= number_format($item['line_total'], 2) ?></td>
                             </tr>
+                            <?php if (!empty($item['modifiers'])): ?>
+                                <?php foreach ($item['modifiers'] as $mod): ?>
+                                    <tr class="text-muted">
+                                        <td class="ps-4 small">+ <?= e($mod['modifier_name']) ?> ($<?= number_format($mod['modifier_price'], 2) ?>)</td>
+                                        <td></td>
+                                        <td></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
                         <?php endforeach; ?>
                     </tbody>
                     <tfoot>
@@ -75,15 +90,23 @@ var _receiptData = <?= json_encode([
     'store_address' => $settings['store_address'] ?? '',
     'store_phone'   => $settings['store_phone'] ?? '',
     'transaction_id'=> $transaction['id'] ?? 0,
+    'daily_number'  => $transaction['daily_number'] ?? null,
+    'annual_number' => $transaction['annual_number'] ?? null,
     'date'          => isset($transaction['created_at']) ? date('Y-m-d H:i', strtotime($transaction['created_at'])) : '',
     'cashier'       => $transaction['username'] ?? '',
     'items'         => array_map(fn($i) => [
-        'name'       => $i['product_name'],
-        'quantity'   => (int)$i['quantity'],
-        'unit_price' => (float)$i['unit_price'],
-        'line_total' => (float)$i['line_total'],
-        'gst'        => (float)$i['gst'],
-        'pst'        => (float)$i['pst'],
+        'name'             => $i['product_name'],
+        'quantity'         => (int)$i['quantity'],
+        'unit_price'       => (float)$i['unit_price'],
+        'line_total'       => (float)$i['line_total'],
+        'gst'              => (float)$i['gst'],
+        'pst'              => (float)$i['pst'],
+        'discount_percent' => (float)($i['discount_percent'] ?? 0),
+        'modifiers'  => array_map(fn($m) => [
+            'name'  => $m['modifier_name'],
+            'price' => (float)$m['modifier_price'],
+            'qty'   => (int)$m['quantity'],
+        ], $i['modifiers'] ?? []),
     ], $items ?? []),
     'subtotal'       => (float)($transaction['subtotal'] ?? 0),
     'gst_amount'     => (float)($transaction['gst_amount'] ?? 0),
@@ -116,6 +139,12 @@ function printReceipt() {
 <?php if (!empty($autoPrint) && $transaction): ?>
 // Auto-print on sale completion
 printReceipt();
+// Show total on pole display
+fetch('http://localhost:5000/pole-display', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ line1: 'TOTAL', line2: '$<?= number_format($transaction['total'], 2) ?>' })
+}).catch(() => {});
 <?php endif; ?>
 
 // Receipt auto-redirect countdown

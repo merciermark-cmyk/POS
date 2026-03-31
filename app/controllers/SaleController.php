@@ -7,10 +7,33 @@ class SaleController {
 
         $categories = (new Category())->getAll();
         $products   = (new Product())->getAll();
-        $cart       = $_SESSION['pos_cart'] ?? [];
-        $wholesale  = !empty($_SESSION['pos_wholesale']);
-        $cartTotals = calculateCartTotals($cart, $wholesale);
-        $settings   = (new PosSetting())->getAll();
+        $cart         = $_SESSION['pos_cart'] ?? [];
+        $wholesale    = !empty($_SESSION['pos_wholesale']);
+        $cartDiscount = !empty($_SESSION['pos_cart_discount']);
+        $cartTotals   = calculateCartTotals($cart, $wholesale, $cartDiscount);
+        $settings     = (new PosSetting())->getAll();
+
+        // Beverage modifiers: find beverage category ID and load active modifiers
+        $beverageCatId = null;
+        foreach ($categories as $cat) {
+            if ($cat['name'] === BEVERAGE_CATEGORY_NAME) {
+                $beverageCatId = (int)$cat['id'];
+                break;
+            }
+        }
+        $activeModifiers = (new Modifier())->getActiveModifiers();
+
+        // Terminal info for header badge and print URL
+        $terminalName     = null;
+        $terminalPrintUrl = PRINT_SERVICE_URL;
+        $terminalId       = $_SESSION['pos_terminal_id'] ?? null;
+        if ($terminalId) {
+            $terminal = (new Terminal())->findById($terminalId);
+            if ($terminal) {
+                $terminalName     = $terminal['name'];
+                $terminalPrintUrl = rtrim($terminal['print_service_url'], '/');
+            }
+        }
 
         require APP_PATH . '/views/sale/terminal.php';
     }
@@ -50,9 +73,10 @@ class SaleController {
         }
 
         // Validate payments cover total
-        $wholesale  = !empty($_SESSION['pos_wholesale']);
-        $cartTotals = calculateCartTotals($cart, $wholesale);
-        $totalPaid  = array_sum(array_column($payments, 'amount'));
+        $wholesale    = !empty($_SESSION['pos_wholesale']);
+        $cartDiscount = !empty($_SESSION['pos_cart_discount']);
+        $cartTotals   = calculateCartTotals($cart, $wholesale, $cartDiscount);
+        $totalPaid    = array_sum(array_column($payments, 'amount'));
 
         if ($totalPaid < $cartTotals['total']) {
             setFlash('error', 'Payment amount insufficient.');
@@ -79,12 +103,14 @@ class SaleController {
                 $cartTotals['items'],
                 $payments,
                 $locationId,
-                $wholesale
+                $wholesale,
+                $cartDiscount
             );
 
-            // Clear cart + wholesale flag
+            // Clear cart + wholesale + discount flags
             unset($_SESSION['pos_cart']);
             unset($_SESSION['pos_wholesale']);
+            unset($_SESSION['pos_cart_discount']);
 
             $_SESSION['last_txn_id']  = $txnId;
             $_SESSION['last_change']  = $change;
@@ -106,7 +132,7 @@ class SaleController {
 
         $txnModel    = new Transaction();
         $transaction = $txnModel->findById($txnId);
-        $items       = $txnModel->getItems($txnId);
+        $items       = $txnModel->getItemsWithModifiers($txnId);
         $payments    = $txnModel->getPayments($txnId);
         $settings    = (new PosSetting())->getAll();
         $autoPrint   = !empty($_SESSION['auto_print']);
@@ -118,7 +144,15 @@ class SaleController {
 
     private function sendPrintJob(int $txnId, float $change): void {
         try {
-            $url = PRINT_SERVICE_URL . '/print/receipt';
+            $printUrl = PRINT_SERVICE_URL;
+            $terminalId = $_SESSION['pos_terminal_id'] ?? null;
+            if ($terminalId) {
+                $terminal = (new Terminal())->findById($terminalId);
+                if ($terminal && !empty($terminal['print_service_url'])) {
+                    $printUrl = rtrim($terminal['print_service_url'], '/');
+                }
+            }
+            $url = $printUrl . '/print/receipt';
             $data = json_encode(['transaction_id' => $txnId, 'change' => $change]);
 
             $ch = curl_init($url);

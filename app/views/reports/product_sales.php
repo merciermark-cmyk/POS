@@ -12,6 +12,18 @@ ob_start();
     <div class="col-auto">
         <input type="date" name="date_to" class="form-control" value="<?= e($dateTo) ?>">
     </div>
+    <?php if (!empty($terminals)): ?>
+    <div class="col-auto">
+        <select name="terminal_id" class="form-select">
+            <option value="">All Terminals</option>
+            <?php foreach ($terminals as $t): ?>
+                <option value="<?= $t['id'] ?>" <?= ($terminalId ?? null) == $t['id'] ? 'selected' : '' ?>>
+                    <?= e($t['name']) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    <?php endif; ?>
     <div class="col-auto">
         <button class="btn btn-primary">Filter</button>
     </div>

@@ -22,7 +22,15 @@ ob_start();
     <div class="row">
         <div class="col-lg-8">
             <div class="d-flex align-items-center justify-content-between mb-3">
-                <h3 class="mb-0">Transaction #<?= $transaction['id'] ?></h3>
+                <h3 class="mb-0">
+                    <?php if ($transaction['daily_number']): ?>
+                        Sale #<?= $transaction['daily_number'] ?>
+                        <small class="text-muted fs-6">Txn #<?= $transaction['id'] ?></small>
+                        <span class="badge bg-info fs-6">Year #<?= $transaction['annual_number'] ?></span>
+                    <?php else: ?>
+                        Transaction #<?= $transaction['id'] ?>
+                    <?php endif; ?>
+                </h3>
                 <?= $statusBadge ?>
             </div>
 
@@ -48,7 +56,12 @@ ob_start();
                     <?php foreach ($items as $item): ?>
                         <?php $refQty = $refundedQtys[(int)$item['id']] ?? 0; ?>
                         <tr>
-                            <td><?= e($item['product_name']) ?></td>
+                            <td>
+                                <?= e($item['product_name']) ?>
+                                <?php if (($item['discount_percent'] ?? 0) > 0): ?>
+                                    <span class="badge bg-success">-<?= (int)$item['discount_percent'] ?>%</span>
+                                <?php endif; ?>
+                            </td>
                             <td class="text-muted"><?= e($item['product_code']) ?></td>
                             <td class="text-center"><?= $item['quantity'] ?></td>
                             <td class="text-center"><?= $refQty > 0 ? '<span class="text-danger">' . $refQty . '</span>' : '—' ?></td>
@@ -56,6 +69,14 @@ ob_start();
                             <td class="text-end">$<?= number_format($item['gst'] + $item['pst'], 2) ?></td>
                             <td class="text-end">$<?= number_format($item['line_total'], 2) ?></td>
                         </tr>
+                        <?php if (!empty($item['modifiers'])): ?>
+                            <?php foreach ($item['modifiers'] as $mod): ?>
+                                <tr class="text-muted">
+                                    <td class="ps-4 small">+ <?= e($mod['modifier_name']) ?> ($<?= number_format($mod['modifier_price'], 2) ?>)</td>
+                                    <td colspan="6"></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
                     <?php endforeach; ?>
                 </tbody>
                 <tfoot>

@@ -131,8 +131,13 @@ def build_receipt(data: dict) -> bytes:
         if txn_id:
             out += _line(f'Original Txn: #{txn_id}')
     else:
+        daily_num = data.get('daily_number')
+        if daily_num:
+            out += BOLD_ON
+            out += _line(f'Sale #{daily_num}')
+            out += BOLD_OFF
         if txn_id:
-            out += _line(f'Transaction: #{txn_id}')
+            out += _line(f'Txn: #{txn_id}')
     out += _line(f'Date: {data.get("date", datetime.now().strftime("%Y-%m-%d %I:%M %p"))}')
     cashier = data.get('cashier', '')
     if cashier:
@@ -146,8 +151,22 @@ def build_receipt(data: dict) -> bytes:
         price = float(item.get('unit_price', 0))
         total = float(item.get('line_total', 0))
 
-        out += _line(name)
+        discount_pct = float(item.get('discount_percent', 0))
+        if discount_pct > 0:
+            out += _line(f'{name} (-{int(discount_pct)}%)')
+        else:
+            out += _line(name)
         out += _right_col(f'  {qty} x ${price:.2f}', f'${total:.2f}')
+
+        # Print modifiers indented under item
+        for mod in item.get('modifiers', []):
+            mod_name = str(mod.get('name', ''))[:26]
+            mod_price = float(mod.get('price', 0))
+            mod_qty = int(mod.get('qty', 1))
+            if mod_qty > 1:
+                out += _line(f'    + {mod_name} x{mod_qty} (${mod_price:.2f})')
+            else:
+                out += _line(f'    + {mod_name} (${mod_price:.2f})')
 
         tax_parts = []
         if float(item.get('gst', 0)) > 0:

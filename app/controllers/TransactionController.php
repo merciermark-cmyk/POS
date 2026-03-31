@@ -25,7 +25,7 @@ class TransactionController {
             return;
         }
 
-        $items    = $txnModel->getItems($id);
+        $items    = $txnModel->getItemsWithModifiers($id);
         $payments = $txnModel->getPayments($id);
         $settings = (new PosSetting())->getAll();
 

@@ -542,3 +542,97 @@ body:has(.staff-picker) {
 .bg-wholesale {
     background: #6f42c1 !important;
 }
+
+/* Teal discount button */
+.btn-outline-teal {
+    color: #20c997;
+    border-color: #20c997;
+    background: transparent;
+}
+.btn-outline-teal:hover {
+    color: #fff;
+    background: #20c997;
+    border-color: #20c997;
+}
+.btn-outline-teal:disabled {
+    color: #20c997;
+    opacity: .4;
+}
+.btn-teal {
+    color: #fff;
+    background: #20c997;
+    border-color: #20c997;
+}
+.btn-teal:hover {
+    color: #fff;
+    background: #1baa80;
+    border-color: #1baa80;
+}
+.text-teal { color: #20c997; }
+.bg-teal { background-color: #20c997 !important; }
+.discount-strike {
+    text-decoration: line-through;
+    opacity: .6;
+    font-size: .85em;
+}
+.discount-badge {
+    font-size: .7em;
+    vertical-align: middle;
+}
+
+/* ── Quantity Keypad Modal ── */
+.qty-keypad-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+}
+
+.qty-keypad-btn {
+    height: 60px;
+    font-size: 1.4rem;
+    font-weight: 600;
+    border-radius: 10px;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.qty-keypad-btn:active {
+    transform: scale(0.95);
+}
+
+.qty-keypad-display {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 8px;
+    min-height: 60px;
+}
+
+.qty-mode-toggle .qty-mode-btn {
+    border-radius: 0;
+    font-weight: 600;
+    font-size: 1.1rem;
+    min-height: 44px;
+}
+
+.qty-mode-toggle .qty-mode-btn:first-child {
+    border-radius: 8px 0 0 8px;
+}
+
+.qty-mode-toggle .qty-mode-btn:last-child {
+    border-radius: 0 8px 8px 0;
+}
+
+.qty-display {
+    cursor: pointer;
+}
+
+.qty-display:hover {
+    color: #0d6efd;
+    text-decoration: underline;
+}
+
+.quick-dollar-btn {
+    min-height: 44px;
+    font-size: 1.1rem;
+    font-weight: 600;
+}

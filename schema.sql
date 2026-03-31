@@ -11,9 +11,19 @@ CREATE TABLE IF NOT EXISTS pos_users (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS pos_terminals (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50) NOT NULL,
+    print_service_url VARCHAR(255) NOT NULL DEFAULT 'http://localhost:5000',
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS pos_shifts (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id INT UNSIGNED NOT NULL,
+    terminal_id INT UNSIGNED NULL,
     opened_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     closed_at DATETIME NULL,
     opening_float DECIMAL(10,2) NOT NULL DEFAULT 0.00,
@@ -24,6 +34,7 @@ CREATE TABLE IF NOT EXISTS pos_shifts (
     notes TEXT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_user_id (user_id),
+    INDEX idx_terminal_id (terminal_id),
     INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -31,6 +42,7 @@ CREATE TABLE IF NOT EXISTS pos_transactions (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     shift_id INT UNSIGNED NOT NULL,
     user_id INT UNSIGNED NOT NULL,
+    terminal_id INT UNSIGNED NULL,
     subtotal DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     gst_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     pst_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
@@ -39,9 +51,16 @@ CREATE TABLE IF NOT EXISTS pos_transactions (
     voided_by INT UNSIGNED NULL,
     voided_at DATETIME NULL,
     void_reason VARCHAR(255) NULL,
+    is_manual_entry TINYINT(1) NOT NULL DEFAULT 0,
+    transaction_count INT UNSIGNED NULL,
+    notes TEXT NULL,
+    daily_number INT UNSIGNED NULL,
+    monthly_number INT UNSIGNED NULL,
+    annual_number INT UNSIGNED NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_shift_id (shift_id),
     INDEX idx_user_id (user_id),
+    INDEX idx_terminal_id (terminal_id),
     INDEX idx_status (status),
     INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -127,6 +146,26 @@ CREATE TABLE IF NOT EXISTS pos_refund_items (
     pst DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     line_total DECIMAL(10,2) NOT NULL,
     INDEX idx_refund_id (refund_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS pos_modifiers (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    sort_order INT NOT NULL DEFAULT 0,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS pos_transaction_item_modifiers (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    transaction_item_id INT UNSIGNED NOT NULL,
+    modifier_id INT UNSIGNED NOT NULL,
+    modifier_name VARCHAR(100) NOT NULL,
+    modifier_price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    quantity INT NOT NULL DEFAULT 1,
+    INDEX idx_transaction_item_id (transaction_item_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS pos_refund_payments (

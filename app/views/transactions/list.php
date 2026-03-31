@@ -20,14 +20,14 @@ ob_start();
 <table class="table table-striped">
     <thead>
         <tr>
-            <th>#</th><th>Date/Time</th><th>Cashier</th><th>Shift</th>
+            <th>#</th><th>Sale #</th><th>Date/Time</th><th>Cashier</th><th>Shift</th>
             <th class="text-end">Subtotal</th><th class="text-end">Tax</th>
             <th class="text-end">Total</th><th>Status</th>
         </tr>
     </thead>
     <tbody>
         <?php if (empty($transactions)): ?>
-            <tr><td colspan="8" class="text-muted text-center">No transactions found.</td></tr>
+            <tr><td colspan="9" class="text-muted text-center">No transactions found.</td></tr>
         <?php endif; ?>
         <?php foreach ($transactions as $t): ?>
             <?php
@@ -51,6 +51,7 @@ ob_start();
             ?>
             <tr class="<?= $rowClass ?>">
                 <td><a href="<?= baseUrl('transactions/view/' . $t['id']) ?>"><?= $t['id'] ?></a></td>
+                <td><?= $t['daily_number'] ? $t['daily_number'] : '—' ?></td>
                 <td><?= date('M j g:i A', strtotime($t['created_at'])) ?></td>
                 <td><?= e($t['username']) ?></td>
                 <td><?= $t['shift_number'] ?></td>
@@ -61,6 +62,9 @@ ob_start();
                     <span class="badge <?= $badgeClass ?>">
                         <?= e($statusLabel) ?>
                     </span>
+                    <?php if (!empty($t['is_manual_entry'])): ?>
+                        <span class="badge bg-info">Manual</span>
+                    <?php endif; ?>
                 </td>
             </tr>
         <?php endforeach; ?>

@@ -10,6 +10,9 @@ ob_start();
         <div class="card shadow">
             <div class="card-body p-4">
                 <h3 class="text-center mb-2">Shift Report</h3>
+                <?php if (!empty($terminalName)): ?>
+                    <p class="text-center"><span class="badge bg-primary"><?= e($terminalName) ?></span></p>
+                <?php endif; ?>
                 <p class="text-center text-muted">
                     <?= date('M j, Y g:i A', strtotime($shift['opened_at'])) ?>
                     <?php if ($shift['closed_at']): ?>
@@ -77,11 +80,12 @@ ob_start();
                 <?php if ($transactions): ?>
                     <h5 class="mt-4">Transactions</h5>
                     <table class="table table-sm">
-                        <thead><tr><th>#</th><th>Time</th><th>Status</th><th class="text-end">Total</th></tr></thead>
+                        <thead><tr><th>#</th><th>Sale #</th><th>Time</th><th>Status</th><th class="text-end">Total</th></tr></thead>
                         <tbody>
                             <?php foreach ($transactions as $t): ?>
                                 <tr>
                                     <td><a href="<?= baseUrl('transactions/view/' . $t['id']) ?>"><?= $t['id'] ?></a></td>
+                                    <td><?= $t['daily_number'] ? $t['daily_number'] : '—' ?></td>
                                     <td><?= date('g:i A', strtotime($t['created_at'])) ?></td>
                                     <td>
                                         <?php

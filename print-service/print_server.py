@@ -112,6 +112,18 @@ def fetch_transaction(txn_id: int) -> dict:
     cur.execute('SELECT * FROM pos_transaction_items WHERE transaction_id = %s ORDER BY id', (txn_id,))
     items = cur.fetchall()
 
+    # Load modifiers for each item
+    if items:
+        item_ids = [i['id'] for i in items]
+        placeholders = ','.join(['%s'] * len(item_ids))
+        cur.execute(f'SELECT * FROM pos_transaction_item_modifiers WHERE transaction_item_id IN ({placeholders}) ORDER BY id', tuple(item_ids))
+        mod_rows = cur.fetchall()
+        mod_map = {}
+        for m in mod_rows:
+            mod_map.setdefault(m['transaction_item_id'], []).append(m)
+        for item in items:
+            item['modifiers'] = mod_map.get(item['id'], [])
+
     cur.execute('SELECT * FROM pos_payments WHERE transaction_id = %s ORDER BY id', (txn_id,))
     payments = cur.fetchall()
 

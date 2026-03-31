@@ -21,6 +21,18 @@ ob_start();
             <?php endfor; ?>
         </select>
     </div>
+    <?php if (!empty($terminals)): ?>
+    <div class="col-auto">
+        <select name="terminal_id" class="form-select">
+            <option value="">All Terminals</option>
+            <?php foreach ($terminals as $t): ?>
+                <option value="<?= $t['id'] ?>" <?= ($terminalId ?? null) == $t['id'] ? 'selected' : '' ?>>
+                    <?= e($t['name']) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    <?php endif; ?>
     <div class="col-auto">
         <button class="btn btn-primary">View</button>
     </div>

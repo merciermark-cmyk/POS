@@ -97,8 +97,22 @@ def build_receipt(txn_data: dict, change: float = 0) -> bytes:
         price = float(item['unit_price'])
         total = float(item['line_total'])
 
-        out += _line(name)
+        discount_pct = float(item.get('discount_percent', 0))
+        if discount_pct > 0:
+            out += _line(f'{name} (-{int(discount_pct)}%)')
+        else:
+            out += _line(name)
         out += _right_col(f'  {qty} x ${price:.2f}', f'${total:.2f}')
+
+        # Print modifiers indented under item
+        for mod in item.get('modifiers', []):
+            mod_name = mod.get('modifier_name', mod.get('name', ''))[:26]
+            mod_price = float(mod.get('modifier_price', mod.get('price', 0)))
+            mod_qty = int(mod.get('quantity', mod.get('qty', 1)))
+            if mod_qty > 1:
+                out += _line(f'    + {mod_name} x{mod_qty} (${mod_price:.2f})')
+            else:
+                out += _line(f'    + {mod_name} (${mod_price:.2f})')
 
         tax_parts = []
         if float(item.get('gst', 0)) > 0:

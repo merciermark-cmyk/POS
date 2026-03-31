@@ -17,6 +17,8 @@ require_once APP_PATH . '/models/Inventory.php';
 require_once APP_PATH . '/models/AuditLog.php';
 require_once APP_PATH . '/models/ProductImage.php';
 require_once APP_PATH . '/models/GiftCard.php';
+require_once APP_PATH . '/models/Modifier.php';
+require_once APP_PATH . '/models/Terminal.php';
 require_once APP_PATH . '/models/PosSetting.php';
 
 // Helpers
@@ -33,6 +35,9 @@ require_once APP_PATH . '/controllers/ReportController.php';
 require_once APP_PATH . '/controllers/UserController.php';
 require_once APP_PATH . '/controllers/SettingsController.php';
 require_once APP_PATH . '/controllers/ImageController.php';
+require_once APP_PATH . '/controllers/ModifierController.php';
+require_once APP_PATH . '/controllers/TerminalController.php';
+require_once APP_PATH . '/controllers/ManualEntryController.php';
 require_once APP_PATH . '/controllers/ApiController.php';
 
 // ── Session ───────────────────────────────────────────────────────────────────
@@ -44,12 +49,16 @@ if (session_status() === PHP_SESSION_NONE) {
 if (isset($_SESSION['pos_user_id'])) {
     $lastActivity = $_SESSION['last_activity'] ?? time();
     if ((time() - $lastActivity) > (SESSION_TIMEOUT_DEFAULT * 60)) {
-        $shiftId = $_SESSION['pos_shift_id'] ?? null;
+        $shiftId    = $_SESSION['pos_shift_id'] ?? null;
+        $terminalId = $_SESSION['pos_terminal_id'] ?? null;
         session_unset();
         session_destroy();
         session_start();
         if ($shiftId) {
             $_SESSION['locked_shift_id'] = $shiftId;
+        }
+        if ($terminalId) {
+            $_SESSION['pos_terminal_id'] = $terminalId;
         }
         $_SESSION['flash_error'] = 'Your session has expired. Please log in again.';
         redirect('/login');
@@ -108,9 +117,10 @@ function dispatch(string $url): void {
             redirect('/');
             break;
         case 'next-customer':
-            // Clear cart + wholesale but keep current operator
+            // Clear cart + wholesale + discount but keep current operator
             unset($_SESSION['pos_cart']);
             unset($_SESSION['pos_wholesale']);
+            unset($_SESSION['pos_cart_discount']);
             redirect('/sale');
             break;
 
@@ -174,6 +184,38 @@ function dispatch(string $url): void {
             };
             break;
 
+        // Modifiers (admin)
+        case 'modifiers':
+            $mc = new ModifierController();
+            match ($seg1) {
+                'create' => $mc->create(),
+                'edit'   => $mc->edit((int)$seg2),
+                'delete' => $mc->delete((int)$seg2),
+                default  => $mc->index(),
+            };
+            break;
+
+        // Terminals (admin)
+        case 'terminals':
+            $tc = new TerminalController();
+            match ($seg1) {
+                'create' => $tc->create(),
+                'edit'   => $tc->edit((int)$seg2),
+                'delete' => $tc->delete((int)$seg2),
+                default  => $tc->index(),
+            };
+            break;
+
+        // Manual Entry
+        case 'manual-entry':
+            $mc = new ManualEntryController();
+            if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                $mc->save();
+            } else {
+                $mc->form();
+            }
+            break;
+
         // Settings
         case 'settings':
             (new SettingsController())->index();
@@ -199,6 +241,8 @@ function dispatch(string $url): void {
                 'cart/remove'      => $api->cartRemove(),
                 'cart/clear'       => $api->cartClear(),
                 'wholesale/toggle' => $api->wholesaleToggle(),
+                'discount/toggle'  => $api->discountToggle(),
+                'discount/item'    => $api->discountItem(),
                 'gift-card/check'  => $api->giftCardCheck(),
                 'print/receipt'    => $api->printReceipt(),
                 'print/open-drawer'=> $api->printOpenDrawer(),

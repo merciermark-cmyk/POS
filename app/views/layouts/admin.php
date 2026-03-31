@@ -39,12 +39,15 @@ $currentPath = $_GET['url'] ?? '';
                             <li><a class="dropdown-item" href="<?= baseUrl('reports/product-sales') ?>">Product Sales</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="<?= baseUrl('shift/history') ?>">Shift History</a></li>
+                            <li><a class="dropdown-item" href="<?= baseUrl('manual-entry') ?>">Manual Entry</a></li>
                         </ul>
                     </li>
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">Admin</a>
                         <ul class="dropdown-menu">
                             <li><a class="dropdown-item" href="<?= baseUrl('users') ?>">Users</a></li>
+                            <li><a class="dropdown-item" href="<?= baseUrl('terminals') ?>">Terminals</a></li>
+                            <li><a class="dropdown-item" href="<?= baseUrl('modifiers') ?>">Modifiers</a></li>
                             <li><a class="dropdown-item" href="<?= baseUrl('images') ?>">Product Images</a></li>
                             <li><a class="dropdown-item" href="<?= baseUrl('settings') ?>">Settings</a></li>
                         </ul>
