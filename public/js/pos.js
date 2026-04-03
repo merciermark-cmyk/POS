@@ -101,7 +101,7 @@
     });
 
     // ── Product search (created via JS to prevent browser autofill) ──
-    const searchWrap = document.getElementById('productSearchWrap');
+    const searchWrap = document.getElementById('pqw');
     const searchInput = document.createElement('input');
     searchInput.type = 'search';
     searchInput.id = 'productSearch';

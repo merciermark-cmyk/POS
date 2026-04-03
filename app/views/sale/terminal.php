@@ -13,7 +13,7 @@ var POS_MODIFIERS = <?= json_encode($activeModifiers) ?>;
 var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
 </script>
 
-<form autocomplete="off" style="display:contents"><div class="pos-terminal">
+<div class="pos-terminal">
     <!-- Header Bar -->
     <div class="pos-header">
         <div class="d-flex align-items-center justify-content-between px-3 py-2">
@@ -76,7 +76,7 @@ var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
             <div class="pos-search px-2 py-2 d-flex gap-2">
                 <input type="text" id="pluInput" class="form-control" style="max-width:130px; font-size:1.1rem; font-weight:bold; text-align:center"
                        placeholder="PLU#" autocomplete="off" inputmode="numeric">
-                <span id="productSearchWrap" class="flex-grow-1"></span>
+                <span id="pqw" class="flex-grow-1"></span>
             </div>
 
             <!-- Product Grid -->
@@ -431,7 +431,6 @@ var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
 <div id="idleWarning" class="idle-warning" style="display:none">
     Returning to staff picker in <span id="idleWarningText"></span>s...
 </div>
-</form>
 
 <?php
 $content = ob_get_clean();
