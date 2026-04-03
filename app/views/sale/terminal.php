@@ -1,18 +1,19 @@
 <?php
 $pageTitle = 'Terminal';
-$scripts = ['public/js/pos.js', 'public/js/payment.js', 'public/js/idle-timer.js'];
+$scripts = ['public/js/pos.js', 'public/js/payment.js', 'public/js/idle-timer.js', 'public/js/standalone-refund.js'];
 ob_start();
 ?>
 <meta name="operator-timeout" content="<?= OPERATOR_TIMEOUT ?>">
 
-<!-- Beverage modifier data for JS -->
+<!-- Category tree + beverage modifier data for JS -->
 <script>
-var POS_BEVERAGE_CAT_ID = <?= json_encode($beverageCatId) ?>;
+var POS_CATEGORY_TREE = <?= json_encode($categoryTree) ?>;
+var POS_BEVERAGE_CAT_IDS = <?= json_encode($beverageCatIds) ?>;
 var POS_MODIFIERS = <?= json_encode($activeModifiers) ?>;
 var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
 </script>
 
-<div class="pos-terminal">
+<form autocomplete="off" style="display:contents"><div class="pos-terminal">
     <!-- Header Bar -->
     <div class="pos-header">
         <div class="d-flex align-items-center justify-content-between px-3 py-2">
@@ -24,6 +25,7 @@ var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
                 <span class="text-light opacity-75">Cashier: <?= e(currentOperator()['username']) ?></span>
             </div>
             <div class="d-flex align-items-center gap-2">
+                <button class="btn btn-danger btn-sm" id="refundBtn">Refund</button>
                 <a href="<?= baseUrl('transactions') ?>" class="btn btn-outline-light btn-sm">History</a>
                 <?php if (isManager()): ?>
                     <a href="<?= baseUrl('reports/daily') ?>" class="btn btn-outline-light btn-sm">Reports</a>
@@ -57,19 +59,24 @@ var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
     <div class="pos-main">
         <!-- Left: Products -->
         <div class="pos-products">
-            <!-- Category Tabs -->
-            <div class="pos-categories">
-                <button class="btn btn-primary category-btn active" data-category="">All</button>
-                <?php foreach ($categories as $cat): ?>
-                    <button class="btn btn-outline-primary category-btn"
-                            data-category="<?= $cat['id'] ?>"><?= e($cat['name']) ?></button>
+            <!-- Parent Category Tabs -->
+            <div class="pos-categories" id="parentCategoryRow">
+                <button class="btn btn-primary category-btn parent-cat-btn active" data-category="" data-has-children="0">All</button>
+                <?php foreach ($categoryTree as $cat): ?>
+                    <button class="btn btn-outline-primary category-btn parent-cat-btn"
+                            data-category="<?= $cat['id'] ?>"
+                            data-has-children="<?= !empty($cat['children']) ? '1' : '0' ?>"><?= e($cat['name']) ?></button>
                 <?php endforeach; ?>
             </div>
+            <!-- Subcategory Tabs (hidden until parent with children is tapped) -->
+            <div class="pos-subcategories" id="subCategoryRow" style="display:none">
+            </div>
 
-            <!-- Search -->
-            <div class="pos-search px-2 py-2">
-                <input type="text" id="productSearch" class="form-control"
-                       placeholder="Search products..." autocomplete="off">
+            <!-- Search + PLU -->
+            <div class="pos-search px-2 py-2 d-flex gap-2">
+                <input type="text" id="pluInput" class="form-control" style="max-width:130px; font-size:1.1rem; font-weight:bold; text-align:center"
+                       placeholder="PLU#" autocomplete="off" inputmode="numeric">
+                <span id="productSearchWrap" class="flex-grow-1"></span>
             </div>
 
             <!-- Product Grid -->
@@ -77,6 +84,7 @@ var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
                 <?php foreach ($products as $p): ?>
                     <div class="pos-product-card" data-id="<?= $p['id'] ?>"
                          data-category="<?= $p['category_id'] ?? '' ?>"
+                         data-parent-category="<?= $p['parent_category_id'] ?? '' ?>"
                          data-name="<?= e(strtolower($p['name'])) ?>"
                          data-code="<?= e(strtolower($p['product_code'] ?? '')) ?>"
                          data-price="<?= (float)$p['unit_price'] ?>">
@@ -341,10 +349,89 @@ var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
     </div>
 </div>
 
+<!-- Standalone Refund Modal -->
+<div class="modal fade" id="standaloneRefundModal" tabindex="-1" data-bs-backdrop="static"
+     data-threshold="<?= $standaloneRefundThreshold ?>">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">Process Refund</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <span class="badge bg-success mb-3" id="authBadge" style="display:none"></span>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Refund Amount ($)</label>
+                    <input type="number" class="form-control form-control-lg" id="refundAmount"
+                           step="0.01" min="0.01" placeholder="0.00" inputmode="decimal">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Customer Name</label>
+                    <input type="text" class="form-control" id="refundCustomerName"
+                           placeholder="Customer name for records" maxlength="255" autocomplete="off">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Reason</label>
+                    <input type="text" class="form-control" id="refundReason"
+                           placeholder="e.g. Wrong tea given" maxlength="255" autocomplete="off">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Payment Method</label>
+                    <select class="form-select" id="refundPaymentMethod">
+                        <option value="cash">Cash</option>
+                        <option value="card">Card</option>
+                    </select>
+                </div>
+                <div class="alert alert-warning" id="thresholdWarning" style="display:none"></div>
+                <button class="btn btn-outline-primary" id="requestPinBtn" style="display:none">
+                    Enter Manager PIN
+                </button>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger btn-lg" id="processRefundBtn">Process Refund</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Manager PIN Modal -->
+<div class="modal fade" id="managerPinModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white py-2">
+                <h5 class="modal-title">Manager PIN</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-2">
+                <input type="password" class="form-control form-control-lg text-center mb-2"
+                       id="managerPinInput" placeholder="Enter PIN" inputmode="numeric" autocomplete="off">
+                <div class="alert alert-danger py-1 mb-2" id="pinError" style="display:none"></div>
+                <div class="qty-keypad-grid">
+                    <button class="btn btn-light pin-keypad-btn" data-key="1">1</button>
+                    <button class="btn btn-light pin-keypad-btn" data-key="2">2</button>
+                    <button class="btn btn-light pin-keypad-btn" data-key="3">3</button>
+                    <button class="btn btn-outline-danger pin-keypad-btn" data-key="backspace">&#9003;</button>
+                    <button class="btn btn-light pin-keypad-btn" data-key="4">4</button>
+                    <button class="btn btn-light pin-keypad-btn" data-key="5">5</button>
+                    <button class="btn btn-light pin-keypad-btn" data-key="6">6</button>
+                    <button class="btn btn-outline-secondary pin-keypad-btn" data-key="clear">C</button>
+                    <button class="btn btn-light pin-keypad-btn" data-key="7">7</button>
+                    <button class="btn btn-light pin-keypad-btn" data-key="8">8</button>
+                    <button class="btn btn-light pin-keypad-btn" data-key="9">9</button>
+                    <button class="btn btn-light pin-keypad-btn" data-key="0">0</button>
+                </div>
+                <button class="btn btn-primary w-100 btn-lg mt-2" id="verifyPinBtn">Verify</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Idle warning banner -->
 <div id="idleWarning" class="idle-warning" style="display:none">
     Returning to staff picker in <span id="idleWarningText"></span>s...
 </div>
+</form>
 
 <?php
 $content = ob_get_clean();

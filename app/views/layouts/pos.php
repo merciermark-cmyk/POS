@@ -20,7 +20,7 @@
     <script src="<?= baseUrl('public/vendor/bootstrap/js/bootstrap.bundle.min.js') ?>"></script>
     <?php if (!empty($scripts)): ?>
         <?php foreach ($scripts as $s): ?>
-            <script src="<?= baseUrl($s) ?>"></script>
+            <script src="<?= baseUrl($s) ?>?v=<?= filemtime(BASE_PATH . '/' . $s) ?>"></script>
         <?php endforeach; ?>
     <?php endif; ?>
 </body>

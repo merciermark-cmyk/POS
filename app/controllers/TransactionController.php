@@ -4,10 +4,11 @@ class TransactionController {
     public function index(): void {
         requireAuth();
 
-        $dateFrom = $_GET['date_from'] ?? date('Y-m-d');
-        $dateTo   = $_GET['date_to']   ?? date('Y-m-d');
+        $dateFrom     = $_GET['date_from'] ?? date('Y-m-d');
+        $dateTo       = $_GET['date_to']   ?? date('Y-m-d');
+        $customerName = trim($_GET['customer_name'] ?? '');
 
-        $transactions = (new Transaction())->getRecent(200, $dateFrom, $dateTo);
+        $transactions = (new Transaction())->getRecent(200, $dateFrom, $dateTo, null, $customerName);
 
         require APP_PATH . '/views/transactions/list.php';
     }
@@ -34,7 +35,6 @@ class TransactionController {
 
     public function void(): void {
         requireAuth();
-        requireManager();
 
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             redirect('/transactions');
@@ -43,8 +43,9 @@ class TransactionController {
 
         verifyCsrfToken();
 
-        $id     = (int)($_POST['transaction_id'] ?? 0);
-        $reason = trim($_POST['void_reason'] ?? '');
+        $id           = (int)($_POST['transaction_id'] ?? 0);
+        $reason       = trim($_POST['void_reason'] ?? '');
+        $customerName = trim($_POST['customer_name'] ?? '');
 
         if (!$reason) {
             setFlash('error', 'Void reason is required.');
@@ -56,7 +57,7 @@ class TransactionController {
         $user = currentUser();
 
         try {
-            (new Transaction())->void($id, $user['id'], $reason, $locationId);
+            (new Transaction())->void($id, $user['id'], $reason, $locationId, $customerName);
             setFlash('success', 'Transaction #' . $id . ' voided.');
         } catch (Exception $e) {
             setFlash('error', 'Void failed: ' . $e->getMessage());
@@ -67,7 +68,6 @@ class TransactionController {
 
     public function refund(): void {
         requireAuth();
-        requireManager();
 
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             redirect('/transactions');
@@ -76,8 +76,25 @@ class TransactionController {
 
         verifyCsrfToken();
 
-        $txnId  = (int)($_POST['transaction_id'] ?? 0);
-        $reason = trim($_POST['refund_reason'] ?? '');
+        $txnId        = (int)($_POST['transaction_id'] ?? 0);
+        $reason       = trim($_POST['refund_reason'] ?? '');
+        $customerName = trim($_POST['customer_name'] ?? '');
+        $authCode     = trim($_POST['auth_code'] ?? '');
+
+        // If not a manager, require a valid temp auth code for refunds over $50
+        $authorizedBy = null;
+        $tempAuthId   = null;
+        if (!isManager() && $authCode) {
+            $tempAuth = (new TempAuth())->verify($authCode);
+            if (!$tempAuth) {
+                setFlash('error', 'Invalid or expired authorization code.');
+                redirect('/transactions/view/' . $txnId);
+                return;
+            }
+
+            $authorizedBy = (int)$tempAuth['generated_by'];
+            $tempAuthId   = (int)$tempAuth['id'];
+        }
 
         if (!$reason) {
             setFlash('error', 'Refund reason is required.');
@@ -116,6 +133,16 @@ class TransactionController {
             }
         }
 
+        // Cashiers need authorization for refunds over $50
+        if (!isManager() && !$authorizedBy) {
+            $refundTotal = array_sum(array_column($payments, 'amount'));
+            if ($refundTotal > 50.00) {
+                setFlash('error', 'Manager authorization code required for refunds over $50.');
+                redirect('/transactions/view/' . $txnId);
+                return;
+            }
+        }
+
         $locationId = (new PosSetting())->getShopLocationId();
         $user       = currentUser();
         $shiftId    = $_SESSION['pos_shift_id'] ?? 0;
@@ -123,8 +150,14 @@ class TransactionController {
         try {
             $refundId = (new Transaction())->refund(
                 $txnId, $user['id'], $shiftId, $reason,
-                $refundItems, $payments, $locationId
+                $refundItems, $payments, $locationId, $customerName, $authorizedBy
             );
+
+            // Mark temp auth code as used after successful refund
+            if ($tempAuthId) {
+                (new TempAuth())->markUsed($tempAuthId, $user['id'], $refundId);
+            }
+
             setFlash('success', 'Refund #' . $refundId . ' processed.');
             redirect('/transactions/refund-receipt/' . $refundId);
         } catch (Exception $e) {

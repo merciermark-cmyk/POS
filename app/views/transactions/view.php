@@ -42,6 +42,9 @@ ob_start();
             <?php if ($transaction['status'] === 'voided'): ?>
                 <div class="alert alert-danger">
                     Voided: <?= e($transaction['void_reason']) ?>
+                    <?php if (!empty($transaction['customer_name'])): ?>
+                        <br><strong>Customer:</strong> <?= e($transaction['customer_name']) ?>
+                    <?php endif; ?>
                     <br><small>at <?= date('M j g:i A', strtotime($transaction['voided_at'])) ?></small>
                 </div>
             <?php endif; ?>
@@ -101,13 +104,14 @@ ob_start();
             <?php if (!empty($refunds)): ?>
                 <h5 class="mt-4">Refund History</h5>
                 <table class="table table-sm">
-                    <thead><tr><th>#</th><th>Date</th><th>By</th><th>Reason</th><th class="text-end">Amount</th><th></th></tr></thead>
+                    <thead><tr><th>#</th><th>Date</th><th>By</th><th>Customer</th><th>Reason</th><th class="text-end">Amount</th><th></th></tr></thead>
                     <tbody>
                         <?php foreach ($refunds as $ref): ?>
                             <tr>
                                 <td><?= $ref['id'] ?></td>
                                 <td><?= date('M j g:i A', strtotime($ref['created_at'])) ?></td>
                                 <td><?= e($ref['refunded_by_name']) ?></td>
+                                <td><?= e($ref['customer_name'] ?? '') ?></td>
                                 <td><?= e($ref['reason']) ?></td>
                                 <td class="text-end text-danger">-$<?= number_format($ref['total'], 2) ?></td>
                                 <td><a href="<?= baseUrl('transactions/refund-receipt/' . $ref['id']) ?>" class="btn btn-sm btn-outline-secondary">Receipt</a></td>
@@ -125,12 +129,16 @@ ob_start();
                     <button class="btn btn-outline-secondary w-100 mb-2"
                             onclick="printReceipt(<?= $transaction['id'] ?>)">Reprint Receipt</button>
 
-                    <?php if ($transaction['status'] === 'completed' && isManager()): ?>
+                    <?php if ($transaction['status'] === 'completed'): ?>
                         <hr>
                         <form method="post" action="<?= baseUrl('transactions/void') ?>"
                               onsubmit="return confirm('Void this transaction? This will return items to inventory.')">
                             <?= csrfField() ?>
                             <input type="hidden" name="transaction_id" value="<?= $transaction['id'] ?>">
+                            <div class="mb-2">
+                                <label class="form-label">Customer Name</label>
+                                <input type="text" name="customer_name" class="form-control" required placeholder="Customer name for records">
+                            </div>
                             <div class="mb-2">
                                 <label class="form-label">Void Reason</label>
                                 <input type="text" name="void_reason" class="form-control" required>
@@ -139,7 +147,7 @@ ob_start();
                         </form>
                     <?php endif; ?>
 
-                    <?php if (in_array($transaction['status'], ['completed', 'partial_refund']) && isManager()): ?>
+                    <?php if (in_array($transaction['status'], ['completed', 'partial_refund'])): ?>
                         <hr>
                         <h6>Refund Items</h6>
                         <form method="post" action="<?= baseUrl('transactions/refund') ?>" id="refundForm"
@@ -170,6 +178,24 @@ ob_start();
                                 Refund Total: <span id="refundTotal" class="text-danger">$0.00</span>
                             </div>
 
+                            <?php if (!isManager()): ?>
+                                <div class="mb-2 d-none" id="authCodeSection">
+                                    <label class="form-label">Authorization Code <span class="text-muted small">(required over $50)</span></label>
+                                    <div class="input-group">
+                                        <input type="text" name="auth_code" id="authCode" class="form-control font-monospace"
+                                               maxlength="6" pattern="\d{6}"
+                                               placeholder="6-digit code from manager"
+                                               inputmode="numeric" autocomplete="off">
+                                        <button type="button" class="btn btn-outline-secondary" id="btnVerifyCode" onclick="verifyAuthCode()">Verify</button>
+                                    </div>
+                                    <div id="authCodeStatus" class="small mt-1"></div>
+                                </div>
+                            <?php endif; ?>
+
+                            <div class="mb-2">
+                                <label class="form-label">Customer Name</label>
+                                <input type="text" name="customer_name" class="form-control" required placeholder="Customer name for records">
+                            </div>
                             <div class="mb-2">
                                 <label class="form-label">Reason</label>
                                 <input type="text" name="refund_reason" class="form-control" required>
@@ -185,7 +211,7 @@ ob_start();
                                 <input type="hidden" name="refund_pay_amount[]" id="refundPayAmount" value="0">
                             </div>
 
-                            <button type="submit" class="btn btn-warning w-100">Process Refund</button>
+                            <button type="submit" class="btn btn-warning w-100" id="btnSubmitRefund">Process Refund</button>
                         </form>
                     <?php endif; ?>
                 </div>
@@ -224,6 +250,23 @@ function updateRefundTotal() {
     total = Math.round(total * 100) / 100;
     document.getElementById('refundTotal').textContent = '$' + total.toFixed(2);
     document.getElementById('refundPayAmount').value = total.toFixed(2);
+
+    // Show/hide auth code section for cashiers when over $50
+    var authSection = document.getElementById('authCodeSection');
+    var submitBtn = document.getElementById('btnSubmitRefund');
+    if (authSection) {
+        if (total > 50) {
+            authSection.classList.remove('d-none');
+            var authCode = document.getElementById('authCode');
+            // Disable submit unless code is already verified (readOnly means verified)
+            if (authCode && !authCode.readOnly) {
+                submitBtn.disabled = true;
+            }
+        } else {
+            authSection.classList.add('d-none');
+            submitBtn.disabled = false;
+        }
+    }
 }
 
 function validateRefundForm() {
@@ -233,6 +276,47 @@ function validateRefundForm() {
         return false;
     }
     return confirm('Process refund of $' + total.toFixed(2) + '?');
+}
+
+function verifyAuthCode() {
+    var code = document.getElementById('authCode');
+    if (!code) return;
+    var val = code.value.trim();
+    if (val.length !== 6 || !/^\d{6}$/.test(val)) {
+        document.getElementById('authCodeStatus').innerHTML = '<span class="text-danger">Enter a 6-digit code.</span>';
+        return;
+    }
+
+    var btn = document.getElementById('btnVerifyCode');
+    btn.disabled = true;
+    btn.textContent = 'Checking...';
+
+    fetch('<?= baseUrl('api/temp-auth/verify') ?>', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'code=' + encodeURIComponent(val)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        btn.disabled = false;
+        btn.textContent = 'Verify';
+        if (data.valid) {
+            document.getElementById('authCodeStatus').innerHTML =
+                '<span class="text-success">Authorized by ' + data.manager_username + '</span>';
+            document.getElementById('btnSubmitRefund').disabled = false;
+            code.readOnly = true;
+        } else {
+            document.getElementById('authCodeStatus').innerHTML =
+                '<span class="text-danger">' + (data.error || 'Invalid code') + '</span>';
+            document.getElementById('btnSubmitRefund').disabled = true;
+        }
+    })
+    .catch(function() {
+        btn.disabled = false;
+        btn.textContent = 'Verify';
+        document.getElementById('authCodeStatus').innerHTML =
+            '<span class="text-danger">Verification failed. Try again.</span>';
+    });
 }
 </script>
 

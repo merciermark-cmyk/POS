@@ -5,9 +5,13 @@
     const baseUrl = document.querySelector('meta[name="base-url"]')?.content || '/';
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
-    // Beverage modifier globals (set in terminal.php)
-    const beverageCatId = window.POS_BEVERAGE_CAT_ID || null;
+    // Category tree + beverage modifier globals (set in terminal.php)
+    const categoryTree = window.POS_CATEGORY_TREE || [];
+    const beverageCatIds = window.POS_BEVERAGE_CAT_IDS || [];
     const modifiers = window.POS_MODIFIERS || [];
+
+    // Track active subcategory filter
+    let activeSubCategory = null;
 
     // ── API helpers ──────────────────────────────────────────────────
     async function apiPost(endpoint, data = {}) {
@@ -38,31 +42,140 @@
         return parseFloat(f.toFixed(2)).toString();
     }
 
-    // ── Category filter ──────────────────────────────────────────────
-    document.querySelectorAll('.category-btn').forEach(btn => {
+    // ── Category filter (two-level) ──────────────────────────────────
+    function buildSubCategoryRow(parentId) {
+        const subRow = document.getElementById('subCategoryRow');
+        if (!subRow) return;
+
+        // Find parent in tree
+        const parent = categoryTree.find(c => String(c.id) === String(parentId));
+        if (!parent || !parent.children || parent.children.length === 0) {
+            subRow.style.display = 'none';
+            activeSubCategory = null;
+            return;
+        }
+
+        let html = '<button class="btn btn-primary sub-cat-btn active" data-subcategory="">All ' + escHtml(parent.name) + '</button>';
+        parent.children.forEach(child => {
+            html += '<button class="btn btn-outline-primary sub-cat-btn" data-subcategory="' + child.id + '">' + escHtml(child.name) + '</button>';
+        });
+        subRow.innerHTML = html;
+        subRow.style.display = '';
+        activeSubCategory = null;
+
+        // Bind subcategory clicks
+        subRow.querySelectorAll('.sub-cat-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                subRow.querySelectorAll('.sub-cat-btn').forEach(b => {
+                    b.classList.remove('active', 'btn-primary');
+                    b.classList.add('btn-outline-primary');
+                });
+                this.classList.remove('btn-outline-primary');
+                this.classList.add('active', 'btn-primary');
+                activeSubCategory = this.dataset.subcategory || null;
+                filterProducts();
+            });
+        });
+    }
+
+    document.querySelectorAll('.parent-cat-btn').forEach(btn => {
         btn.addEventListener('click', function() {
-            document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
+            document.querySelectorAll('.parent-cat-btn').forEach(b => {
+                b.classList.remove('active', 'btn-primary');
+                b.classList.add('btn-outline-primary');
+            });
+            this.classList.remove('btn-outline-primary');
+            this.classList.add('active', 'btn-primary');
+
+            const parentId = this.dataset.category;
+            const hasChildren = this.dataset.hasChildren === '1';
+
+            if (parentId && hasChildren) {
+                buildSubCategoryRow(parentId);
+            } else {
+                document.getElementById('subCategoryRow').style.display = 'none';
+                activeSubCategory = null;
+            }
             filterProducts();
         });
     });
 
-    // ── Product search ───────────────────────────────────────────────
-    const searchInput = document.getElementById('productSearch');
-    if (searchInput) {
-        searchInput.addEventListener('input', () => filterProducts());
-    }
+    // ── Product search (created via JS to prevent browser autofill) ──
+    const searchWrap = document.getElementById('productSearchWrap');
+    const searchInput = document.createElement('input');
+    searchInput.type = 'search';
+    searchInput.id = 'productSearch';
+    searchInput.className = 'form-control';
+    searchInput.placeholder = 'Search products...';
+    searchInput.autocomplete = 'off';
+    searchWrap.appendChild(searchInput);
+    searchInput.addEventListener('input', () => filterProducts());
 
     function filterProducts() {
-        const activeCat = document.querySelector('.category-btn.active')?.dataset.category || '';
+        const activeParent = document.querySelector('.parent-cat-btn.active')?.dataset.category || '';
         const search = (searchInput?.value || '').toLowerCase().trim();
 
         document.querySelectorAll('.pos-product-card').forEach(card => {
-            const catMatch = !activeCat || card.dataset.category === activeCat;
+            let catMatch;
+            if (!activeParent) {
+                // "All" — show everything
+                catMatch = true;
+            } else if (activeSubCategory) {
+                // Specific subcategory selected
+                catMatch = card.dataset.category === activeSubCategory;
+            } else {
+                // Parent selected (no subcategory filter) — match parent_category_id
+                catMatch = card.dataset.parentCategory === activeParent;
+            }
+
             const nameMatch = !search ||
                 card.dataset.name.includes(search) ||
                 card.dataset.code.includes(search);
             card.classList.toggle('hidden', !(catMatch && nameMatch));
+        });
+    }
+
+    // ── PLU quick-entry ───────────────────────────────────────────────
+    const pluInput = document.getElementById('pluInput');
+    if (pluInput) {
+        pluInput.addEventListener('keydown', async function(e) {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            const plu = this.value.trim().toLowerCase();
+            if (!plu) return;
+
+            // Find product card matching this PLU code
+            const card = document.querySelector('.pos-product-card[data-code="' + CSS.escape(plu) + '"]');
+            if (!card) {
+                this.classList.add('is-invalid');
+                setTimeout(() => this.classList.remove('is-invalid'), 1000);
+                this.select();
+                return;
+            }
+
+            // Clear input and flash green
+            this.value = '';
+            this.classList.add('is-valid');
+            setTimeout(() => this.classList.remove('is-valid'), 500);
+
+            // Same logic as product card click — check beverage for modifier modal
+            const productId = card.dataset.id;
+            const productCat = card.dataset.category;
+            const productName = card.querySelector('.pos-product-name')?.textContent || '';
+            const productPrice = parseFloat(card.dataset.price) || 0;
+
+            if (beverageCatIds.length > 0 && beverageCatIds.includes(parseInt(productCat)) && modifiers.length > 0) {
+                openModifierModal(productId, productName, productPrice);
+                return;
+            }
+
+            const result = await apiPost('api/cart/add', { product_id: productId, quantity: 1 });
+            if (result.error) {
+                alert(result.error);
+                return;
+            }
+            renderCart(result);
+            updatePoleDisplay(result);
         });
     }
 
@@ -184,8 +297,8 @@
             const productName = this.querySelector('.pos-product-name')?.textContent || '';
             const productPrice = parseFloat(this.dataset.price) || 0;
 
-            // If beverage category and modifiers exist, open modal
-            if (beverageCatId && productCat === String(beverageCatId) && modifiers.length > 0) {
+            // If beverage category (parent or subcategory) and modifiers exist, open modal
+            if (beverageCatIds.length > 0 && beverageCatIds.includes(parseInt(productCat)) && modifiers.length > 0) {
                 openModifierModal(productId, productName, productPrice);
                 return;
             }
@@ -448,6 +561,20 @@
         updateKeypadDisplay();
     }
 
+    /**
+     * Calculate the smallest quantity (to 2 dp) so that qty * unitPrice >= desired dollars.
+     * This ensures the checkout total matches or just exceeds the entered dollar amount.
+     */
+    function qtyForDollars(dollars, unitPrice) {
+        const raw = dollars / unitPrice;
+        const rounded = Math.round(raw * 100) / 100;
+        // Check if rounding down lost a cent
+        if (Math.round(rounded * unitPrice * 100) / 100 < dollars) {
+            return Math.ceil(raw * 100) / 100;
+        }
+        return rounded;
+    }
+
     function updateKeypadDisplay() {
         const inputEl = document.getElementById('qtyKeypadInput');
         const previewEl = document.getElementById('qtyKeypadPreview');
@@ -457,8 +584,9 @@
             inputEl.textContent = '$' + input;
             const dollars = parseFloat(input) || 0;
             if (dollars > 0 && qtyKeypadState.unitPrice > 0) {
-                const calcQty = Math.round((dollars / qtyKeypadState.unitPrice) * 100) / 100;
-                previewEl.textContent = '$' + dollars.toFixed(2) + ' \u00f7 $' + qtyKeypadState.unitPrice.toFixed(2) + ' = ' + fmtQty(calcQty) + ' units';
+                const calcQty = qtyForDollars(dollars, qtyKeypadState.unitPrice);
+                const actualTotal = (Math.round(calcQty * qtyKeypadState.unitPrice * 100) / 100).toFixed(2);
+                previewEl.textContent = '$' + dollars.toFixed(2) + ' \u00f7 $' + qtyKeypadState.unitPrice.toFixed(2) + ' = ' + fmtQty(calcQty) + ' units ($' + actualTotal + ')';
                 previewEl.style.display = '';
             } else {
                 previewEl.style.display = 'none';
@@ -510,12 +638,14 @@
 
     async function confirmKeypad() {
         let qty;
+        let dollarAmount = null;
         const input = qtyKeypadState.input;
         const value = parseFloat(input) || 0;
 
         if (qtyKeypadState.mode === 'dollar') {
             if (value <= 0 || qtyKeypadState.unitPrice <= 0) return;
-            qty = Math.round((value / qtyKeypadState.unitPrice) * 100) / 100;
+            dollarAmount = Math.round(value * 100) / 100;
+            qty = qtyForDollars(value, qtyKeypadState.unitPrice);
             if (qty < 0.01) {
                 alert('Amount too small — quantity rounds to 0.');
                 return;
@@ -526,10 +656,14 @@
         }
 
         qtyKeypadState.instance?.hide();
-        const result = await apiPost('api/cart/update', {
+        const postData = {
             cart_key: qtyKeypadState.cartKey,
             quantity: qty
-        });
+        };
+        if (dollarAmount !== null) {
+            postData.dollar_amount = dollarAmount;
+        }
+        const result = await apiPost('api/cart/update', postData);
         renderCart(result);
     }
 

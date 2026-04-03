@@ -20,6 +20,8 @@ require_once APP_PATH . '/models/GiftCard.php';
 require_once APP_PATH . '/models/Modifier.php';
 require_once APP_PATH . '/models/Terminal.php';
 require_once APP_PATH . '/models/PosSetting.php';
+require_once APP_PATH . '/models/StandaloneRefund.php';
+require_once APP_PATH . '/models/TempAuth.php';
 
 // Helpers
 require_once APP_PATH . '/helpers/csrf_helper.php';
@@ -36,8 +38,10 @@ require_once APP_PATH . '/controllers/UserController.php';
 require_once APP_PATH . '/controllers/SettingsController.php';
 require_once APP_PATH . '/controllers/ImageController.php';
 require_once APP_PATH . '/controllers/ModifierController.php';
+require_once APP_PATH . '/controllers/ProductController.php';
 require_once APP_PATH . '/controllers/TerminalController.php';
 require_once APP_PATH . '/controllers/ManualEntryController.php';
+require_once APP_PATH . '/controllers/TempAuthController.php';
 require_once APP_PATH . '/controllers/ApiController.php';
 
 // ── Session ───────────────────────────────────────────────────────────────────
@@ -166,10 +170,11 @@ function dispatch(string $url): void {
         case 'reports':
             $rc = new ReportController();
             match ($seg1) {
-                'daily'         => $rc->daily(),
-                'monthly'       => $rc->monthly(),
-                'product-sales' => $rc->productSales(),
-                default         => $rc->daily(),
+                'daily'              => $rc->daily(),
+                'monthly'            => $rc->monthly(),
+                'product-sales'      => $rc->productSales(),
+                'transaction-search' => $rc->transactionSearch(),
+                default              => $rc->daily(),
             };
             break;
 
@@ -181,6 +186,16 @@ function dispatch(string $url): void {
                 'edit'   => $uc->edit((int)$seg2),
                 'delete' => $uc->delete((int)$seg2),
                 default  => $uc->index(),
+            };
+            break;
+
+        // Products (admin — price editor)
+        case 'products':
+            $pc = new ProductController();
+            match ($seg1) {
+                'update-price'      => $pc->updatePrice(),
+                'toggle-visibility' => $pc->toggleVisibility(),
+                default             => $pc->index(),
             };
             break;
 
@@ -216,6 +231,15 @@ function dispatch(string $url): void {
             }
             break;
 
+        // Remote Auth (temp authorization codes)
+        case 'remote-auth':
+            $tac = new TempAuthController();
+            match ($seg1) {
+                'generate' => $tac->generate(),
+                default    => $tac->dashboard(),
+            };
+            break;
+
         // Settings
         case 'settings':
             (new SettingsController())->index();
@@ -246,7 +270,11 @@ function dispatch(string $url): void {
                 'gift-card/check'  => $api->giftCardCheck(),
                 'print/receipt'    => $api->printReceipt(),
                 'print/open-drawer'=> $api->printOpenDrawer(),
+                'verify-manager-pin/' => $api->verifyManagerPin(),
+                'standalone-refund/'  => $api->standaloneRefund(),
                 'pole-display/'    => $api->poleDisplay(),
+                'temp-auth/verify' => $api->verifyTempAuth(),
+                'temp-auth/generate' => $api->generateTempAuth(),
                 default            => (function() {
                     http_response_code(404);
                     header('Content-Type: application/json');

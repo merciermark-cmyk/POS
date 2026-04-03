@@ -77,9 +77,11 @@ class ApiController {
 
     /** POST /api/cart/update */
     public function cartUpdate(): void {
-        $cartKey   = $_POST['cart_key'] ?? '';
-        $productId = (int)($_POST['product_id'] ?? 0);
-        $quantity  = (float)($_POST['quantity'] ?? 0);
+        $cartKey      = $_POST['cart_key'] ?? '';
+        $productId    = (int)($_POST['product_id'] ?? 0);
+        $quantity     = (float)($_POST['quantity'] ?? 0);
+        $dollarAmount = isset($_POST['dollar_amount']) && $_POST['dollar_amount'] !== ''
+            ? round((float)$_POST['dollar_amount'], 2) : null;
 
         $cart = &$_SESSION['pos_cart'];
         if (!is_array($cart)) $cart = [];
@@ -95,9 +97,11 @@ class ApiController {
                 $itemKey = $item['cart_key'] ?? (string)$item['product_id'];
                 if ($cartKey && $itemKey === $cartKey) {
                     $item['quantity'] = $quantity;
+                    $item['dollar_amount'] = $dollarAmount;
                     break;
                 } elseif (!$cartKey && $item['product_id'] === $productId) {
                     $item['quantity'] = $quantity;
+                    $item['dollar_amount'] = $dollarAmount;
                     break;
                 }
             }
@@ -282,6 +286,136 @@ class ApiController {
         }
     }
 
+    /** POST /api/verify-manager-pin */
+    public function verifyManagerPin(): void {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json(['error' => 'POST required'], 405);
+            return;
+        }
+
+        $pin = trim($_POST['pin'] ?? '');
+        if (!$pin) {
+            $this->json(['error' => 'PIN required'], 400);
+            return;
+        }
+
+        $manager = (new PosUser())->findManagerByPin($pin);
+        if (!$manager) {
+            $this->json(['error' => 'Invalid manager PIN'], 403);
+            return;
+        }
+
+        $this->json(['id' => (int)$manager['id'], 'username' => $manager['username']]);
+    }
+
+    /** POST /api/standalone-refund */
+    public function standaloneRefund(): void {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json(['error' => 'POST required'], 405);
+            return;
+        }
+
+        $amount       = round((float)($_POST['amount'] ?? 0), 2);
+        $customerName = trim($_POST['customer_name'] ?? '');
+        $reason       = trim($_POST['reason'] ?? '');
+        $method       = $_POST['payment_method'] ?? '';
+        $authBy       = !empty($_POST['authorized_by']) ? (int)$_POST['authorized_by'] : null;
+
+        // Validate
+        if ($amount <= 0) {
+            $this->json(['error' => 'Invalid amount'], 400);
+            return;
+        }
+        if (!$customerName) {
+            $this->json(['error' => 'Customer name required'], 400);
+            return;
+        }
+        if (!$reason) {
+            $this->json(['error' => 'Reason required'], 400);
+            return;
+        }
+        if (!in_array($method, ['cash', 'card'])) {
+            $this->json(['error' => 'Invalid payment method'], 400);
+            return;
+        }
+
+        // Check threshold
+        $threshold = (float)(new PosSetting())->get('standalone_refund_threshold', '50.00');
+        if ($amount > $threshold && !$authBy) {
+            $this->json(['error' => 'Manager authorization required for refunds over $' . number_format($threshold, 2)], 403);
+            return;
+        }
+
+        $shiftId    = $_SESSION['pos_shift_id'] ?? null;
+        $terminalId = $_SESSION['pos_terminal_id'] ?? null;
+        $operator   = currentOperator();
+
+        if (!$shiftId) {
+            $this->json(['error' => 'No open shift'], 400);
+            return;
+        }
+
+        $refundModel = new StandaloneRefund();
+        $refundId = $refundModel->create([
+            'shift_id'       => $shiftId,
+            'terminal_id'    => $terminalId,
+            'processed_by'   => $operator['id'],
+            'authorized_by'  => $authBy,
+            'amount'         => $amount,
+            'payment_method' => $method,
+            'reason'         => $reason,
+            'customer_name'  => $customerName,
+        ]);
+
+        // Build receipt JSON for the print service
+        $settings = (new PosSetting())->getAll();
+        $authName = null;
+        if ($authBy) {
+            $authUser = (new PosUser())->findById($authBy);
+            $authName = $authUser['username'] ?? null;
+        }
+
+        $receipt = [
+            'store_name'    => $settings['store_name'] ?? 'Granville Island Tea Co.',
+            'store_address' => $settings['store_address'] ?? '',
+            'store_phone'   => $settings['store_phone'] ?? '',
+            'is_refund'     => true,
+            'refund_id'     => $refundId,
+            'date'          => date('Y-m-d h:i A'),
+            'cashier'       => $operator['username'],
+            'reason'        => $reason,
+            'items'         => [
+                [
+                    'name'       => 'Standalone Refund',
+                    'quantity'   => 1,
+                    'unit_price' => $amount,
+                    'line_total' => $amount,
+                    'gst'        => 0,
+                    'pst'        => 0,
+                ]
+            ],
+            'subtotal'       => $amount,
+            'gst_amount'     => 0,
+            'pst_amount'     => 0,
+            'total'          => $amount,
+            'payments'       => [['method' => $method, 'amount' => $amount]],
+            'change'         => 0,
+            'gst_number'     => $settings['gst_number'] ?? '',
+            'pst_number'     => $settings['pst_number'] ?? '',
+            'receipt_footer' => $settings['receipt_footer'] ?? 'Thank you!',
+            'no_drawer'      => ($method === 'card'),
+        ];
+
+        if ($authName) {
+            $receipt['authorized_by'] = $authName;
+        }
+
+        $this->json([
+            'refund_id' => $refundId,
+            'receipt'   => $receipt,
+        ]);
+    }
+
     /** POST /api/pole-display */
     public function poleDisplay(): void {
         $line1 = $_POST['line1'] ?? '';
@@ -305,6 +439,49 @@ class ApiController {
         } catch (Exception $e) {
             $this->json(['error' => $e->getMessage()], 500);
         }
+    }
+
+    /** POST /api/temp-auth/verify — Verify a temporary authorization code */
+    public function verifyTempAuth(): void {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json(['error' => 'POST required'], 405);
+            return;
+        }
+
+        $code = trim($_POST['code'] ?? '');
+        if (!$code || !preg_match('/^\d{6}$/', $code)) {
+            $this->json(['error' => 'Invalid code format'], 400);
+            return;
+        }
+
+        $auth = (new TempAuth())->verify($code);
+        if (!$auth) {
+            $this->json(['error' => 'Invalid or expired code'], 403);
+            return;
+        }
+
+        $this->json([
+            'valid'            => true,
+            'auth_id'          => (int)$auth['id'],
+            'manager_username' => $auth['manager_username'],
+        ]);
+    }
+
+    /** POST /api/temp-auth/generate — Generate a code (manager only) */
+    public function generateTempAuth(): void {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json(['error' => 'POST required'], 405);
+            return;
+        }
+
+        if (!isManager()) {
+            $this->json(['error' => 'Manager access required'], 403);
+            return;
+        }
+
+        $user = currentUser();
+        $result = (new TempAuth())->generate($user['id']);
+        $this->json($result);
     }
 
     private function getTerminalPrintUrl(): string {

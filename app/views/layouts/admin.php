@@ -37,16 +37,21 @@ $currentPath = $_GET['url'] ?? '';
                             <li><a class="dropdown-item" href="<?= baseUrl('reports/daily') ?>">Daily Sales</a></li>
                             <li><a class="dropdown-item" href="<?= baseUrl('reports/monthly') ?>">Monthly Sales</a></li>
                             <li><a class="dropdown-item" href="<?= baseUrl('reports/product-sales') ?>">Product Sales</a></li>
+                            <li><a class="dropdown-item" href="<?= baseUrl('reports/transaction-search') ?>">Transaction Search</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="<?= baseUrl('shift/history') ?>">Shift History</a></li>
                             <li><a class="dropdown-item" href="<?= baseUrl('manual-entry') ?>">Manual Entry</a></li>
                         </ul>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="<?= baseUrl('remote-auth') ?>">Remote Auth</a>
                     </li>
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">Admin</a>
                         <ul class="dropdown-menu">
                             <li><a class="dropdown-item" href="<?= baseUrl('users') ?>">Users</a></li>
                             <li><a class="dropdown-item" href="<?= baseUrl('terminals') ?>">Terminals</a></li>
+                            <li><a class="dropdown-item" href="<?= baseUrl('products') ?>">Products</a></li>
                             <li><a class="dropdown-item" href="<?= baseUrl('modifiers') ?>">Modifiers</a></li>
                             <li><a class="dropdown-item" href="<?= baseUrl('images') ?>">Product Images</a></li>
                             <li><a class="dropdown-item" href="<?= baseUrl('settings') ?>">Settings</a></li>
@@ -89,7 +94,7 @@ $currentPath = $_GET['url'] ?? '';
     <script src="<?= baseUrl('public/vendor/bootstrap/js/bootstrap.bundle.min.js') ?>"></script>
     <?php if (!empty($scripts)): ?>
         <?php foreach ($scripts as $s): ?>
-            <script src="<?= baseUrl($s) ?>"></script>
+            <script src="<?= baseUrl($s) ?>?v=<?= filemtime(BASE_PATH . '/' . $s) ?>"></script>
         <?php endforeach; ?>
     <?php endif; ?>
 </body>

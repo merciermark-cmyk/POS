@@ -152,7 +152,9 @@ class Transaction extends BaseModel {
         string $reason,
         array  $refundItems,   // [['item_id' => int, 'quantity' => int], ...]
         array  $payments,      // [['method' => string, 'amount' => float, 'reference' => ?string], ...]
-        int    $locationId
+        int    $locationId,
+        string $customerName = '',
+        ?int   $authorizedBy = null
     ): int {
         $txn = $this->findById($txnId);
         if (!$txn) throw new RuntimeException('Transaction not found.');
@@ -230,29 +232,12 @@ class Transaction extends BaseModel {
         try {
             // Insert refund header
             $refundId = (int)$this->insert(
-                'INSERT INTO pos_refunds (original_transaction_id, shift_id, refunded_by, subtotal, gst_amount, pst_amount, total, reason)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                [$txnId, $shiftId, $refundedBy, round($subtotal, 2), round($gstTotal, 2), round($pstTotal, 2), $total, $reason]
+                'INSERT INTO pos_refunds (original_transaction_id, shift_id, refunded_by, authorized_by, subtotal, gst_amount, pst_amount, total, reason, customer_name)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [$txnId, $shiftId, $refundedBy, $authorizedBy, round($subtotal, 2), round($gstTotal, 2), round($pstTotal, 2), $total, $reason, $customerName ?: null]
             );
 
-            // Insert refund items + return inventory
-            $inventory = new Inventory();
-            $audit     = new AuditLog();
-
-            // Batch-fetch track_inventory flags
-            $refundProductIds = array_unique(array_column($refundRows, 'product_id'));
-            $trackMap = [];
-            if ($refundProductIds) {
-                $placeholders = implode(',', array_fill(0, count($refundProductIds), '?'));
-                $rows = $this->findAll(
-                    "SELECT id, track_inventory FROM products WHERE id IN ($placeholders)",
-                    array_values($refundProductIds)
-                );
-                foreach ($rows as $r) {
-                    $trackMap[(int)$r['id']] = (int)$r['track_inventory'];
-                }
-            }
-
+            // Insert refund items (no inventory return — food cannot be resold)
             foreach ($refundRows as $row) {
                 $this->insert(
                     'INSERT INTO pos_refund_items
@@ -272,27 +257,6 @@ class Transaction extends BaseModel {
                         $row['line_total'],
                     ]
                 );
-
-                // Return stock only for tracked products
-                if (($trackMap[(int)$row['product_id']] ?? 1) === 1) {
-                    [$before, $after] = $inventory->adjustStock(
-                        $row['product_id'],
-                        $locationId,
-                        $row['quantity'] // positive = return to stock
-                    );
-
-                    $audit->record(
-                        $refundedBy,
-                        $row['product_id'],
-                        $locationId,
-                        'pos_refund',
-                        $before,
-                        $row['quantity'],
-                        $after,
-                        "Refund: $reason",
-                        $txnId
-                    );
-                }
             }
 
             // Insert refund payments
@@ -386,7 +350,7 @@ class Transaction extends BaseModel {
         );
     }
 
-    public function void(int $txnId, int $voidedBy, string $reason, int $locationId): void {
+    public function void(int $txnId, int $voidedBy, string $reason, int $locationId, string $customerName = ''): void {
         $txn = $this->findById($txnId);
         if (!$txn) throw new RuntimeException('Transaction not found.');
         if ($txn['status'] === 'voided') throw new RuntimeException('Transaction already voided.');
@@ -396,9 +360,9 @@ class Transaction extends BaseModel {
         try {
             // Mark voided
             $this->execute(
-                'UPDATE pos_transactions SET status = ?, voided_by = ?, voided_at = NOW(), void_reason = ?
+                'UPDATE pos_transactions SET status = ?, voided_by = ?, voided_at = NOW(), void_reason = ?, customer_name = ?
                  WHERE id = ?',
-                ['voided', $voidedBy, $reason, $txnId]
+                ['voided', $voidedBy, $reason, $customerName ?: null, $txnId]
             );
 
             // Reverse inventory
@@ -503,13 +467,19 @@ class Transaction extends BaseModel {
         );
     }
 
-    public function getRecent(int $limit = 50, ?string $dateFrom = null, ?string $dateTo = null): array {
+    public function getRecent(int $limit = 50, ?string $dateFrom = null, ?string $dateTo = null, ?int $terminalId = null, string $customerName = ''): array {
         $sql = 'SELECT t.*, u.username, s.id AS shift_number
                 FROM pos_transactions t
                 JOIN pos_users u ON t.user_id = u.id
-                JOIN pos_shifts s ON t.shift_id = s.id
-                WHERE 1=1';
+                JOIN pos_shifts s ON t.shift_id = s.id';
         $params = [];
+
+        if ($customerName !== '') {
+            // Search customer name on voids and refunds
+            $sql .= ' LEFT JOIN pos_refunds r ON r.original_transaction_id = t.id';
+        }
+
+        $sql .= ' WHERE 1=1';
 
         if ($dateFrom) {
             $sql .= ' AND DATE(t.created_at) >= ?';
@@ -519,8 +489,14 @@ class Transaction extends BaseModel {
             $sql .= ' AND DATE(t.created_at) <= ?';
             $params[] = $dateTo;
         }
+        if ($customerName !== '') {
+            $like = '%' . $customerName . '%';
+            $sql .= ' AND (t.customer_name LIKE ? OR r.customer_name LIKE ?)';
+            $params[] = $like;
+            $params[] = $like;
+        }
 
-        $sql .= ' ORDER BY t.created_at DESC LIMIT ?';
+        $sql .= ' GROUP BY t.id ORDER BY t.created_at DESC LIMIT ?';
         $params[] = $limit;
 
         return $this->findAll($sql, $params);
@@ -548,7 +524,8 @@ class Transaction extends BaseModel {
      */
     private function getCategorySales(string $whereClause, array $params): array {
         return $this->findAll(
-            "SELECT CASE WHEN t.is_wholesale = 1 THEN 'Wholesale' ELSE c.name END AS category_name,
+            "SELECT CASE WHEN t.is_wholesale = 1 THEN 'Wholesale'
+                         ELSE COALESCE(pc.name, c.name) END AS category_name,
                     SUM(ti.quantity) AS qty,
                     COALESCE(SUM(ti.line_total - ti.gst - ti.pst), 0) AS subtotal,
                     COALESCE(SUM(ti.gst), 0) AS gst,
@@ -558,8 +535,10 @@ class Transaction extends BaseModel {
              JOIN pos_transactions t ON ti.transaction_id = t.id
              LEFT JOIN products p ON ti.product_id = p.id
              LEFT JOIN categories c ON p.category_id = c.id
+             LEFT JOIN categories pc ON c.parent_id = pc.id
              WHERE t.status IN ('completed','partial_refund') $whereClause
-             GROUP BY CASE WHEN t.is_wholesale = 1 THEN 'Wholesale' ELSE c.name END
+             GROUP BY CASE WHEN t.is_wholesale = 1 THEN 'Wholesale'
+                           ELSE COALESCE(pc.name, c.name) END
              ORDER BY category_name",
             $params
         );
@@ -645,6 +624,167 @@ class Transaction extends BaseModel {
             'UPDATE pos_transactions SET daily_number = ?, monthly_number = ?, annual_number = ? WHERE id = ?',
             [(int)$counters['daily_number'], (int)$counters['monthly_number'], (int)$counters['annual_number'], $txnId]
         );
+    }
+
+    /**
+     * Search transactions and line items by amount with fuzzy tolerance.
+     */
+    public function searchByAmount(float $amount, float $tolerance, string $dateFrom, string $dateTo, ?int $terminalId = null): array {
+        $params = [];
+
+        // Query 1: Transaction-level matches
+        $sql = "SELECT t.*, u.username, te.name AS terminal_name
+                FROM pos_transactions t
+                JOIN pos_users u ON t.user_id = u.id
+                LEFT JOIN pos_terminals te ON t.terminal_id = te.id
+                WHERE ABS(t.total - ?) <= ?
+                  AND DATE(t.created_at) >= ?
+                  AND DATE(t.created_at) <= ?";
+        $params = [$amount, $tolerance, $dateFrom, $dateTo];
+
+        if ($terminalId) {
+            $sql .= ' AND t.terminal_id = ?';
+            $params[] = $terminalId;
+        }
+        $sql .= ' ORDER BY ABS(t.total - ?) ASC';
+        $params[] = $amount;
+
+        $txnMatches = $this->findAll($sql, $params);
+        $matchedTxnIds = array_map(fn($r) => (int)$r['id'], $txnMatches);
+
+        // Batch-load payments for matched transactions
+        if ($matchedTxnIds) {
+            $ph = implode(',', array_fill(0, count($matchedTxnIds), '?'));
+            $payRows = $this->findAll(
+                "SELECT * FROM pos_payments WHERE transaction_id IN ($ph) ORDER BY transaction_id, id",
+                $matchedTxnIds
+            );
+            $payMap = [];
+            foreach ($payRows as $p) {
+                $payMap[(int)$p['transaction_id']][] = $p;
+            }
+            foreach ($txnMatches as &$t) {
+                $t['payments'] = $payMap[(int)$t['id']] ?? [];
+                $t['match_diff'] = round((float)$t['total'] - $amount, 2);
+            }
+            unset($t);
+
+            // Batch-load refund summaries
+            $refRows = $this->findAll(
+                "SELECT original_transaction_id, COUNT(*) AS refund_count, SUM(total) AS refund_total
+                 FROM pos_refunds WHERE original_transaction_id IN ($ph) GROUP BY original_transaction_id",
+                $matchedTxnIds
+            );
+            $refMap = [];
+            foreach ($refRows as $r) {
+                $refMap[(int)$r['original_transaction_id']] = $r;
+            }
+            foreach ($txnMatches as &$t) {
+                $ref = $refMap[(int)$t['id']] ?? null;
+                $t['refund_count'] = $ref ? (int)$ref['refund_count'] : 0;
+                $t['refund_total'] = $ref ? (float)$ref['refund_total'] : 0;
+            }
+            unset($t);
+        }
+
+        // Query 2: Line item matches (exclude already-matched transactions)
+        $sql2 = "SELECT ti.*, t.created_at AS txn_date, t.status AS txn_status, t.total AS txn_total,
+                        u.username, te.name AS terminal_name
+                 FROM pos_transaction_items ti
+                 JOIN pos_transactions t ON ti.transaction_id = t.id
+                 JOIN pos_users u ON t.user_id = u.id
+                 LEFT JOIN pos_terminals te ON t.terminal_id = te.id
+                 WHERE ABS(ti.line_total - ?) <= ?
+                   AND DATE(t.created_at) >= ?
+                   AND DATE(t.created_at) <= ?";
+        $params2 = [$amount, $tolerance, $dateFrom, $dateTo];
+
+        if ($matchedTxnIds) {
+            $ph = implode(',', array_fill(0, count($matchedTxnIds), '?'));
+            $sql2 .= " AND ti.transaction_id NOT IN ($ph)";
+            $params2 = array_merge($params2, $matchedTxnIds);
+        }
+        if ($terminalId) {
+            $sql2 .= ' AND t.terminal_id = ?';
+            $params2[] = $terminalId;
+        }
+        $sql2 .= ' ORDER BY ABS(ti.line_total - ?) ASC';
+        $params2[] = $amount;
+
+        $lineMatches = $this->findAll($sql2, $params2);
+        foreach ($lineMatches as &$li) {
+            $li['match_diff'] = round((float)$li['line_total'] - $amount, 2);
+        }
+        unset($li);
+
+        return ['transaction_matches' => $txnMatches, 'line_item_matches' => $lineMatches];
+    }
+
+    /**
+     * Deep search: find combinations of 2 or 3 transactions that sum to the target amount.
+     * Only pulls completed/voided/refunded transactions for the date range, then checks in PHP.
+     */
+    public function searchCombinations(float $amount, float $tolerance, string $dateFrom, string $dateTo, ?int $terminalId = null): array {
+        $sql = "SELECT t.id, t.total, t.status, t.created_at, u.username, te.name AS terminal_name
+                FROM pos_transactions t
+                JOIN pos_users u ON t.user_id = u.id
+                LEFT JOIN pos_terminals te ON t.terminal_id = te.id
+                WHERE DATE(t.created_at) >= ? AND DATE(t.created_at) <= ?";
+        $params = [$dateFrom, $dateTo];
+
+        if ($terminalId) {
+            $sql .= ' AND t.terminal_id = ?';
+            $params[] = $terminalId;
+        }
+        $sql .= ' ORDER BY t.total DESC';
+
+        $txns = $this->findAll($sql, $params);
+        $count = count($txns);
+        $pairs = [];
+        $triples = [];
+
+        // Check pairs
+        for ($i = 0; $i < $count - 1; $i++) {
+            for ($j = $i + 1; $j < $count; $j++) {
+                $sum = round((float)$txns[$i]['total'] + (float)$txns[$j]['total'], 2);
+                if (abs($sum - $amount) <= $tolerance) {
+                    $pairs[] = [
+                        'transactions' => [$txns[$i], $txns[$j]],
+                        'sum'          => $sum,
+                        'diff'         => round($sum - $amount, 2),
+                    ];
+                    if (count($pairs) >= 20) break 2; // cap results
+                }
+            }
+        }
+
+        // Only check triples if no pairs found and transaction count is manageable
+        if (empty($pairs) && $count <= 200) {
+            for ($i = 0; $i < $count - 2; $i++) {
+                for ($j = $i + 1; $j < $count - 1; $j++) {
+                    $partial = (float)$txns[$i]['total'] + (float)$txns[$j]['total'];
+                    if ($partial - $tolerance > $amount) continue; // prune: already over target
+                    for ($k = $j + 1; $k < $count; $k++) {
+                        $sum = round($partial + (float)$txns[$k]['total'], 2);
+                        if (abs($sum - $amount) <= $tolerance) {
+                            $triples[] = [
+                                'transactions' => [$txns[$i], $txns[$j], $txns[$k]],
+                                'sum'          => $sum,
+                                'diff'         => round($sum - $amount, 2),
+                            ];
+                            if (count($triples) >= 20) break 3;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sort by closest match
+        $sortByDiff = fn($a, $b) => abs($a['diff']) <=> abs($b['diff']);
+        usort($pairs, $sortByDiff);
+        usort($triples, $sortByDiff);
+
+        return ['pairs' => $pairs, 'triples' => $triples, 'transactions_checked' => $count];
     }
 
     public function getProductSales(?string $dateFrom = null, ?string $dateTo = null, ?int $terminalId = null): array {
