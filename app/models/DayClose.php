@@ -275,6 +275,7 @@ class DayClose extends BaseModel {
                     'r3_cash' => $r3Cash, 'r3_card' => $r3Card, 'r3_tips' => $r3Tips,
                     'details' => $details, 'floats' => $floats,
                     'deposit_total' => $depositTotal,
+                    'closed_by' => $staffId,
                 ]);
             }
 
@@ -349,24 +350,56 @@ class DayClose extends BaseModel {
             ],
         ];
 
+        $closedBy = $data['closed_by'] ?? null;
+
         foreach ($regConfig as $reg => $vals) {
             try {
                 if ($vals['cash'] === null && $reg === 'r3') continue; // R3 not filled in
 
                 $terminalId = self::REGISTER_TERMINAL_MAP[$reg];
                 $shift = $shiftModel->getOpenForTerminal($terminalId);
-                if (!$shift) continue; // no open shift — skip gracefully
+
+                if (!$shift) {
+                    // R3 is an analog register — no shift is ever opened on POS hardware.
+                    // To keep Shift History showing all three registers (the design intent),
+                    // auto-create a synthetic closed shift row from the dayclose data.
+                    // Skip for R1/R2 (those should always have a real shift if staff opened one).
+                    if ($reg === 'r3') {
+                        // Guard against duplicate auto-creates on a repeated Save & Complete.
+                        $existing = $this->findOne(
+                            "SELECT id FROM pos_shifts
+                             WHERE terminal_id = ? AND DATE(closed_at) = ?
+                             ORDER BY id DESC LIMIT 1",
+                            [$terminalId, $date]
+                        );
+                        if (!$existing) {
+                            $this->execute(
+                                "INSERT INTO pos_shifts
+                                    (user_id, closed_by, terminal_id, opened_at, closed_at,
+                                     opening_float, closing_cash, closing_card, closing_tips, cash_deposit,
+                                     status, notes)
+                                 VALUES (?, ?, ?, ?, NOW(),
+                                     ?, ?, ?, ?, ?,
+                                     'closed', 'Auto-created from Close Registers (R3 analog register)')",
+                                [$closedBy, $closedBy, $terminalId, $date . ' 09:00:00',
+                                 (float)self::FLOAT_TARGETS['r3'],
+                                 $vals['cash'], $vals['card'], $vals['tips'], $vals['deposit']]
+                            );
+                        }
+                    }
+                    continue;
+                }
 
                 $shiftModel->close(
                     (int)$shift['id'],
                     (float)$vals['cash'],          // closingCash
-                    'Closed via DayClose',          // notes
+                    'Closed via Close Registers',   // notes
                     $vals['card'],                  // closingCard
                     $vals['tips'],                  // closingTips
                     $vals['deposit']                // cashDeposit
                 );
             } catch (\Throwable $e) {
-                error_log("DayClose closeShifts ($reg) failed: " . $e->getMessage());
+                error_log("Close Registers closeShifts ($reg) failed: " . $e->getMessage());
             }
         }
     }
