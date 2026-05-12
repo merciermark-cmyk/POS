@@ -373,15 +373,17 @@ class DayClose extends BaseModel {
                             [$terminalId, $date]
                         );
                         if (!$existing) {
+                            // R3 has no real open/close lifecycle — the row is just a record of
+                            // the close-time data entry. Open and close timestamps match.
                             $this->execute(
                                 "INSERT INTO pos_shifts
                                     (user_id, closed_by, terminal_id, opened_at, closed_at,
                                      opening_float, closing_cash, closing_card, closing_tips, cash_deposit,
                                      status, notes)
-                                 VALUES (?, ?, ?, ?, NOW(),
+                                 VALUES (?, ?, ?, NOW(), NOW(),
                                      ?, ?, ?, ?, ?,
                                      'closed', 'Auto-created from Close Registers (R3 analog register)')",
-                                [$closedBy, $closedBy, $terminalId, $date . ' 09:00:00',
+                                [$closedBy, $closedBy, $terminalId,
                                  (float)self::FLOAT_TARGETS['r3'],
                                  $vals['cash'], $vals['card'], $vals['tips'], $vals['deposit']]
                             );
