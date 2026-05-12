@@ -1,6 +1,6 @@
 <?php
 /**
- * Summary view — read-only display of a saved day-close count.
+ * Summary view — read-only display of a saved Close Registers count.
  * Variables: $count, $details, $floats, $shifts
  */
 $REGISTERS = DayClose::REGISTERS;
@@ -9,7 +9,7 @@ $COINS     = DayClose::COINS;
 $FLOAT_TARGETS = DayClose::FLOAT_TARGETS;
 $dcModel   = new DayClose();
 
-// Build structured data
+// Build structured data per register
 $regData = [];
 foreach ($REGISTERS as $regId => $reg) {
     $regData[$regId] = ['bills' => [], 'coins' => [], 'usd' => 0, 'bill_total' => 0, 'coin_total' => 0, 'cad_total' => 0];
@@ -65,25 +65,26 @@ foreach ($floats as $f) {
     $floatBillsArr[(int)$f['denomination']] += (int)$f['quantity'];
 }
 ?>
+<link rel="stylesheet" href="<?= baseUrl('public/css/dayclose.css') ?>?v=<?= filemtime(BASE_PATH . '/public/css/dayclose.css') ?>">
 
 <div class="container py-4" style="max-width:700px;">
 
     <div class="text-center mb-4">
         <i class="bi bi-check-circle-fill" style="font-size:3rem;color:#28a745;"></i>
-        <h4 class="mt-2" style="color:var(--dc-olive);font-weight:700;">Close Submitted</h4>
+        <h4 class="mt-2" style="color:var(--olive);font-weight:700;">Close Submitted</h4>
     </div>
 
     <!-- Header -->
-    <div class="dc-summary-section text-center">
-        <h6 class="fw-bold" style="color:var(--dc-olive);">DayClose Summary</h6>
+    <div class="summary-section text-center">
+        <h6 class="fw-bold" style="color:var(--olive);">Close Registers — Summary</h6>
         <div><?= e($count['close_date']) ?> — Closed by <?= e($count['staff_name'] ?? 'Unknown') ?></div>
         <div class="text-muted" style="font-size:0.82rem;">Saved <?= e($count['updated_at']) ?></div>
     </div>
 
-    <!-- R1 & R2 — full denomination view -->
-    <?php foreach (['r1', 'r2'] as $regId): $reg = $REGISTERS[$regId]; ?>
-    <div class="dc-summary-section">
-        <h6 class="fw-bold" style="color:var(--dc-olive);"><?= e($reg['short']) ?> — <?= e($reg['name']) ?></h6>
+    <!-- Per register: full count for ALL three -->
+    <?php foreach ($REGISTERS as $regId => $reg): ?>
+    <div class="summary-section">
+        <h6 class="fw-bold" style="color:var(--olive);"><?= e($reg['short']) ?> — <?= e($reg['name']) ?></h6>
         <div class="row">
             <div class="col-6">
                 <strong>Count</strong><br>
@@ -120,45 +121,61 @@ foreach ($floats as $f) {
                 <?php endif; ?>
             </div>
         </div>
-        <?php
-        $cardKey = $regId . '_card';
-        $tipsKey = $regId . '_tips';
-        if (!empty($count[$cardKey]) || !empty($count[$tipsKey])): ?>
-        <div class="mt-2 pt-2" style="border-top:1px solid #dee2e6;">
-            <?php if (!empty($count[$cardKey])): ?>
-                <strong>Card Batch:</strong> $<?= number_format((float)$count[$cardKey], 2) ?>
+        <?php // R2 tips ?>
+        <?php if ($regId === 'r2' && !empty($count['r2_tips'])): ?>
+            <div class="mt-2 pt-2" style="border-top:1px solid #e0ddd5;">
+                <strong>Tips:</strong> $<?= number_format((float)$count['r2_tips'], 2) ?>
+            </div>
+        <?php endif; ?>
+        <?php // R3 tips + register tape ?>
+        <?php if ($regId === 'r3'): ?>
+            <?php if (!empty($count['r3_tips'])): ?>
+                <div class="mt-2 pt-2" style="border-top:1px solid #e0ddd5;">
+                    <strong>Tips:</strong> $<?= number_format((float)$count['r3_tips'], 2) ?>
+                </div>
             <?php endif; ?>
-            <?php if (!empty($count[$tipsKey])): ?>
-                &nbsp;&nbsp;<strong>Tips:</strong> $<?= number_format((float)$count[$tipsKey], 2) ?>
+            <?php if (!empty($count['r3_total_sales'])): ?>
+                <div class="mt-2 pt-2" style="border-top:1px solid #e0ddd5;background:#f9f9f6;padding:8px;border-radius:4px;">
+                    <strong style="color:var(--olive);">Register Tape</strong><br>
+                    Total Sales: $<?= number_format((float)$count['r3_total_sales'], 2) ?><br>
+                    <?php if (!empty($count['r3_txn_count'])): ?>TXN Count: <?= (int)$count['r3_txn_count'] ?><br><?php endif; ?>
+                    <?php if (!empty($count['r3_gst'])): ?>GST: $<?= number_format((float)$count['r3_gst'], 2) ?><br><?php endif; ?>
+                    <?php if (!empty($count['r3_cash'])): ?>Cash Sales: $<?= number_format((float)$count['r3_cash'], 2) ?><br><?php endif; ?>
+                    <?php if (!empty($count['r3_card'])): ?>Card Sales: $<?= number_format((float)$count['r3_card'], 2) ?><br><?php endif; ?>
+                </div>
             <?php endif; ?>
-        </div>
+        <?php endif; ?>
+        <?php // R1 mail orders ?>
+        <?php if ($regId === 'r1' && (!empty($count['r1_mail_order_amount']) || !empty($count['r1_mail_order_count']))): ?>
+            <div class="mt-2 pt-2" style="border-top:1px solid #e0ddd5;">
+                <strong>Mail Orders:</strong> $<?= number_format((float)($count['r1_mail_order_amount'] ?? 0), 2) ?>
+                (<?= (int)($count['r1_mail_order_count'] ?? 0) ?> orders)
+            </div>
         <?php endif; ?>
     </div>
     <?php endforeach; ?>
 
-    <!-- R3 — manual entry summary -->
-    <div class="dc-summary-section">
-        <h6 class="fw-bold" style="color:var(--dc-olive);">R3 — Ice Tea (Manual Entry)</h6>
-        <div class="row">
-            <div class="col-6">
-                <div class="mb-1"><strong>Total Sales:</strong> $<?= number_format((float)($count['r3_total_sales'] ?? 0), 2) ?></div>
-                <div class="mb-1"><strong>Transactions:</strong> <?= (int)($count['r3_txn_count'] ?? 0) ?></div>
-                <div class="mb-1"><strong>GST:</strong> $<?= number_format((float)($count['r3_gst'] ?? 0), 2) ?></div>
-            </div>
-            <div class="col-6">
-                <div class="mb-1"><strong>Cash:</strong> $<?= number_format((float)($count['r3_cash'] ?? 0), 2) ?></div>
-                <div class="mb-1"><strong>Card:</strong> $<?= number_format((float)($count['r3_card'] ?? 0), 2) ?></div>
-                <?php if (!empty($count['r3_tips'])): ?>
-                <div class="mb-1"><strong>Tips:</strong> $<?= number_format((float)$count['r3_tips'], 2) ?></div>
-                <?php endif; ?>
-                <div class="mb-1"><strong>Float:</strong> $<?= number_format((float)$FLOAT_TARGETS['r3'], 2) ?> (fixed)</div>
-            </div>
-        </div>
+    <!-- Card Batches (Moneris) -->
+    <?php
+    $hasCardBatch = !empty($count['r1_card']) || !empty($count['r2_card']) || !empty($count['r3_card_batch']);
+    if ($hasCardBatch): ?>
+    <div class="summary-section">
+        <h6 class="fw-bold" style="color:var(--olive);">Card Batches (Moneris)</h6>
+        <?php if (!empty($count['r1_card'])): ?>
+            R1 Loose Tea: $<?= number_format((float)$count['r1_card'], 2) ?><br>
+        <?php endif; ?>
+        <?php if (!empty($count['r2_card'])): ?>
+            R2 Tea Bar: $<?= number_format((float)$count['r2_card'], 2) ?><br>
+        <?php endif; ?>
+        <?php if (!empty($count['r3_card_batch'])): ?>
+            R3 Ice Tea: $<?= number_format((float)$count['r3_card_batch'], 2) ?><br>
+        <?php endif; ?>
     </div>
+    <?php endif; ?>
 
     <!-- Deposit -->
-    <div class="dc-summary-section">
-        <h6 class="fw-bold" style="color:var(--dc-olive);">Deposit (CAD)</h6>
+    <div class="summary-section">
+        <h6 class="fw-bold" style="color:var(--olive);">Deposit (CAD)</h6>
         <?php $depTotal = 0; foreach ($BILLS as $b):
             $depCount = $billPool[$b] - $floatBillsArr[$b];
             $depAmt = $depCount * $b;
@@ -166,31 +183,21 @@ foreach ($floats as $f) {
             if ($depCount > 0): ?>
                 $<?= $b ?> &times; <?= $depCount ?> = $<?= number_format($depAmt, 2) ?><br>
         <?php endif; endforeach; ?>
-        <strong>Expected Deposit: $<?= number_format($depTotal, 2) ?></strong>
-        <?php if ($count['actual_deposit'] !== null): ?>
-            <br><strong>Actual Deposit: $<?= number_format((float)$count['actual_deposit'], 2) ?></strong>
-            <?php
-            $variance = round((float)$count['actual_deposit'] - $depTotal, 2);
-            if (abs($variance) > 0.01):
-                $varClass = $variance > 0 ? 'text-success' : 'text-danger';
-            ?>
-                <span class="<?= $varClass ?> fw-bold"> (<?= $variance > 0 ? '+' : '' ?>$<?= number_format($variance, 2) ?>)</span>
-            <?php endif; ?>
-        <?php endif; ?>
+        <strong>Total Deposit: $<?= number_format($depTotal, 2) ?></strong>
     </div>
 
     <!-- USD -->
     <?php
     $hasUsd = false;
-    foreach (['r1', 'r2'] as $regId) {
-        if ($regData[$regId]['usd'] > 0) $hasUsd = true;
+    foreach ($REGISTERS as $regId => $reg) {
+        if ($regData[$regId]['usd'] > 0) { $hasUsd = true; break; }
     }
     if ($hasUsd): ?>
-    <div class="dc-summary-section dc-usd-box">
+    <div class="summary-section usd-box">
         <h6 class="fw-bold" style="color:#856404;">US Cash (Held Separately)</h6>
-        <?php foreach (['r1', 'r2'] as $regId): ?>
+        <?php foreach ($REGISTERS as $regId => $reg): ?>
             <?php if ($regData[$regId]['usd'] > 0): ?>
-                <?= e($REGISTERS[$regId]['short']) ?>: $<?= number_format($regData[$regId]['usd'], 2) ?> USD<br>
+                <?= e($reg['short']) ?>: $<?= number_format($regData[$regId]['usd'], 2) ?> USD<br>
             <?php endif; ?>
         <?php endforeach; ?>
     </div>
@@ -198,17 +205,17 @@ foreach ($floats as $f) {
 
     <!-- Notes -->
     <?php if (!empty($count['notes'])): ?>
-    <div class="dc-summary-section">
-        <h6 class="fw-bold" style="color:var(--dc-olive);">Notes</h6>
+    <div class="summary-section">
+        <h6 class="fw-bold" style="color:var(--olive);">Notes</h6>
         <div><?= nl2br(e($count['notes'])) ?></div>
     </div>
     <?php endif; ?>
 
     <!-- Grand totals -->
-    <div class="dc-summary-section text-center">
+    <div class="summary-section text-center">
         <div class="d-flex justify-content-between align-items-center">
             <span class="fw-bold" style="font-size:1.1rem;">Grand Total (CAD)</span>
-            <span style="font-family:'Courier New',monospace;font-size:1.4rem;font-weight:700;color:var(--dc-olive);">$<?= number_format((float)$count['grand_total_cad'], 2) ?></span>
+            <span style="font-family:'Courier New',monospace;font-size:1.4rem;font-weight:700;color:var(--olive);">$<?= number_format((float)$count['grand_total_cad'], 2) ?></span>
         </div>
         <?php if ((float)$count['grand_total_usd'] > 0): ?>
         <div class="d-flex justify-content-between align-items-center mt-1">
@@ -220,8 +227,8 @@ foreach ($floats as $f) {
 
     <!-- Shift Reconciliation -->
     <?php if (!empty($shifts)): ?>
-    <div class="dc-summary-section">
-        <h6 class="fw-bold" style="color:var(--dc-olive);">Shift Reconciliation</h6>
+    <div class="summary-section">
+        <h6 class="fw-bold" style="color:var(--olive);">Shift Reconciliation</h6>
         <?php foreach ($shifts as $s): ?>
         <div class="mb-3 pb-2" style="border-bottom:1px solid #dee2e6;">
             <strong><?= e($s['terminal_name'] ?? 'Terminal ' . $s['terminal_id']) ?></strong>
@@ -264,7 +271,7 @@ foreach ($floats as $f) {
     <?php endif; ?>
 
     <div class="text-center mt-4">
-        <a href="<?= baseUrl('dayclose') ?>" class="btn btn-dc-tan px-4 py-2 me-2">New Close</a>
+        <a href="<?= baseUrl('dayclose') ?>" class="btn btn-tan px-4 py-2 me-2">New Close</a>
         <a href="<?= baseUrl('dayclose/count?date=' . urlencode($count['close_date']) . '&staff=' . (int)$count['closed_by']) ?>"
            class="btn btn-outline-secondary">Edit</a>
         <a href="<?= baseUrl('dayclose/history') ?>" class="btn btn-outline-secondary ms-2">History</a>

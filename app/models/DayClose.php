@@ -78,17 +78,26 @@ class DayClose extends BaseModel {
             'notes'      => $count['notes'] ?? '',
             'status'     => $count['status'],
             'actual_deposit' => $count['actual_deposit'],
-            'r1_card' => $count['r1_card'],
-            'r1_tips' => $count['r1_tips'],
-            'r2_card' => $count['r2_card'],
-            'r2_tips' => $count['r2_tips'],
-            'r3' => [
-                'total_sales' => $count['r3_total_sales'],
-                'txn_count'   => $count['r3_txn_count'],
-                'gst'         => $count['r3_gst'],
-                'cash'        => $count['r3_cash'],
-                'card'        => $count['r3_card'],
-                'tips'        => $count['r3_tips'],
+            // Structured keys consumed by the rebuilt dayclose.js
+            'cardBatch' => [
+                'r1' => $count['r1_card'] ?? '',
+                'r2' => $count['r2_card'] ?? '',
+                'r3' => $count['r3_card_batch'] ?? '',
+            ],
+            'tips' => [
+                'r2' => $count['r2_tips'] ?? '',
+                'r3' => $count['r3_tips'] ?? '',
+            ],
+            'registerTape' => [
+                'total_sales' => $count['r3_total_sales'] ?? '',
+                'txn_count'   => $count['r3_txn_count']   ?? '',
+                'gst'         => $count['r3_gst']         ?? '',
+                'cash_sales'  => $count['r3_cash']        ?? '',
+                'card_sales'  => $count['r3_card']        ?? '',
+            ],
+            'mailOrders' => [
+                'amount' => $count['r1_mail_order_amount'] ?? '',
+                'count'  => $count['r1_mail_order_count']  ?? '',
             ],
             'count' => [],
             'float' => [],
@@ -136,7 +145,7 @@ class DayClose extends BaseModel {
             $actualDeposit = isset($data['actual_deposit']) && $data['actual_deposit'] !== ''
                 ? round((float)$data['actual_deposit'], 2) : null;
 
-            // R1/R2 card batch & tips
+            // Per-register Moneris card batch totals
             $r1Card = isset($data['r1_card']) && $data['r1_card'] !== '' && $data['r1_card'] !== null
                 ? round((float)$data['r1_card'], 2) : null;
             $r1Tips = isset($data['r1_tips']) && $data['r1_tips'] !== '' && $data['r1_tips'] !== null
@@ -145,14 +154,29 @@ class DayClose extends BaseModel {
                 ? round((float)$data['r2_card'], 2) : null;
             $r2Tips = isset($data['r2_tips']) && $data['r2_tips'] !== '' && $data['r2_tips'] !== null
                 ? round((float)$data['r2_tips'], 2) : null;
+            // R3 Moneris batch (separate column from r3_card which is the register-tape's card_sales line)
+            $r3CardBatch = isset($data['r3_card_batch']) && $data['r3_card_batch'] !== '' && $data['r3_card_batch'] !== null
+                ? round((float)$data['r3_card_batch'], 2) : null;
 
-            // R3 manual fields
-            $r3TotalSales = isset($data['r3_total_sales']) ? round((float)$data['r3_total_sales'], 2) : null;
-            $r3TxnCount   = isset($data['r3_txn_count'])   ? (int)$data['r3_txn_count'] : null;
-            $r3Gst        = isset($data['r3_gst'])         ? round((float)$data['r3_gst'], 2) : null;
-            $r3Cash       = isset($data['r3_cash'])        ? round((float)$data['r3_cash'], 2) : null;
-            $r3Card       = isset($data['r3_card'])        ? round((float)$data['r3_card'], 2) : null;
-            $r3Tips       = isset($data['r3_tips'])        ? round((float)$data['r3_tips'], 2) : null;
+            // R3 register-tape fields (entered from the analog register's tape)
+            $r3TotalSales = isset($data['r3_total_sales']) && $data['r3_total_sales'] !== '' && $data['r3_total_sales'] !== null
+                ? round((float)$data['r3_total_sales'], 2) : null;
+            $r3TxnCount   = isset($data['r3_txn_count']) && $data['r3_txn_count'] !== '' && $data['r3_txn_count'] !== null
+                ? (int)$data['r3_txn_count'] : null;
+            $r3Gst        = isset($data['r3_gst']) && $data['r3_gst'] !== '' && $data['r3_gst'] !== null
+                ? round((float)$data['r3_gst'], 2) : null;
+            $r3Cash       = isset($data['r3_cash']) && $data['r3_cash'] !== '' && $data['r3_cash'] !== null
+                ? round((float)$data['r3_cash'], 2) : null;
+            $r3Card       = isset($data['r3_card']) && $data['r3_card'] !== '' && $data['r3_card'] !== null
+                ? round((float)$data['r3_card'], 2) : null;
+            $r3Tips       = isset($data['r3_tips']) && $data['r3_tips'] !== '' && $data['r3_tips'] !== null
+                ? round((float)$data['r3_tips'], 2) : null;
+
+            // R1 mail orders
+            $r1MailAmt   = isset($data['r1_mail_order_amount']) && $data['r1_mail_order_amount'] !== '' && $data['r1_mail_order_amount'] !== null
+                ? round((float)$data['r1_mail_order_amount'], 2) : null;
+            $r1MailCount = isset($data['r1_mail_order_count']) && $data['r1_mail_order_count'] !== '' && $data['r1_mail_order_count'] !== null
+                ? (int)$data['r1_mail_order_count'] : null;
 
             // Server-side recalculate totals (R1+R2 from details, R3 from manual cash)
             $grandCad = 0.0;
@@ -195,13 +219,15 @@ class DayClose extends BaseModel {
                 $this->execute(
                     "UPDATE dayclose_counts SET closed_by = ?, status = ?, notes = ?,
                      deposit_total = ?, grand_total_cad = ?, grand_total_usd = ?, actual_deposit = ?,
-                     r1_card = ?, r1_tips = ?, r2_card = ?, r2_tips = ?,
+                     r1_card = ?, r1_tips = ?, r2_card = ?, r2_tips = ?, r3_card_batch = ?,
                      r3_total_sales = ?, r3_txn_count = ?, r3_gst = ?, r3_cash = ?, r3_card = ?, r3_tips = ?,
+                     r1_mail_order_amount = ?, r1_mail_order_count = ?,
                      locked_by = NULL, locked_at = NULL, lock_session = NULL,
                      updated_at = NOW() WHERE id = ?",
                     [$staffId, $status, $notes, $depositTotal, $grandCad, $grandUsd, $actualDeposit,
-                     $r1Card, $r1Tips, $r2Card, $r2Tips,
-                     $r3TotalSales, $r3TxnCount, $r3Gst, $r3Cash, $r3Card, $r3Tips, $countId]
+                     $r1Card, $r1Tips, $r2Card, $r2Tips, $r3CardBatch,
+                     $r3TotalSales, $r3TxnCount, $r3Gst, $r3Cash, $r3Card, $r3Tips,
+                     $r1MailAmt, $r1MailCount, $countId]
                 );
                 $this->execute("DELETE FROM dayclose_count_details WHERE count_id = ?", [$countId]);
                 $this->execute("DELETE FROM dayclose_floats WHERE count_id = ?", [$countId]);
@@ -209,12 +235,14 @@ class DayClose extends BaseModel {
                 $countId = (int)$this->insert(
                     "INSERT INTO dayclose_counts
                      (close_date, closed_by, status, notes, deposit_total, grand_total_cad, grand_total_usd,
-                      actual_deposit, r1_card, r1_tips, r2_card, r2_tips,
-                      r3_total_sales, r3_txn_count, r3_gst, r3_cash, r3_card, r3_tips)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                      actual_deposit, r1_card, r1_tips, r2_card, r2_tips, r3_card_batch,
+                      r3_total_sales, r3_txn_count, r3_gst, r3_cash, r3_card, r3_tips,
+                      r1_mail_order_amount, r1_mail_order_count)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     [$date, $staffId, $status, $notes, $depositTotal, $grandCad, $grandUsd, $actualDeposit,
-                     $r1Card, $r1Tips, $r2Card, $r2Tips,
-                     $r3TotalSales, $r3TxnCount, $r3Gst, $r3Cash, $r3Card, $r3Tips]
+                     $r1Card, $r1Tips, $r2Card, $r2Tips, $r3CardBatch,
+                     $r3TotalSales, $r3TxnCount, $r3Gst, $r3Cash, $r3Card, $r3Tips,
+                     $r1MailAmt, $r1MailCount]
                 );
             }
 
