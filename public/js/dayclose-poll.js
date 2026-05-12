@@ -10,15 +10,18 @@
     var base = document.querySelector('meta[name="base-url"]')?.content || '/';
     var polling = null;
     var overlayShown = false;
+    // Track whether this polling session has ever seen the shift open.
+    // Only fire the overlay if we previously saw an open shift on this terminal
+    // (i.e., the close happened during this staff session). Suppresses the
+    // overlay on a fresh login the day of an already-completed close.
+    var sawShiftOpen = false;
 
     function checkStatus() {
         fetch(base + 'dayclose-status', { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
-                // Only fire overlay if dayclose is complete AND this terminal has a still-open shift
-                // (Without the shift_open check, every POS login the day AFTER a completed close
-                // would trigger the overlay because dayclose_complete remains true.)
-                if (data.dayclose_complete && data.shift_open && !overlayShown) {
+                if (data.shift_open) sawShiftOpen = true;
+                if (data.dayclose_complete && sawShiftOpen && !overlayShown) {
                     clearInterval(polling);
                     showOverlay(data.shift_id);
                 }
