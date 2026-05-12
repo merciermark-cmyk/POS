@@ -15,7 +15,10 @@
         fetch(base + 'dayclose-status', { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
-                if (data.dayclose_complete && !overlayShown) {
+                // Only fire overlay if dayclose is complete AND this terminal has a still-open shift
+                // (Without the shift_open check, every POS login the day AFTER a completed close
+                // would trigger the overlay because dayclose_complete remains true.)
+                if (data.dayclose_complete && data.shift_open && !overlayShown) {
                     clearInterval(polling);
                     showOverlay(data.shift_id);
                 }
