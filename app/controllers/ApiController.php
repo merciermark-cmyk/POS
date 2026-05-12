@@ -38,7 +38,16 @@ class ApiController {
             return;
         }
 
+        // Optional custom name + price (e.g. for non-tracked loose tea)
+        $customName  = trim($_POST['custom_name'] ?? '');
+        $customPrice = isset($_POST['custom_price']) && $_POST['custom_price'] !== ''
+            ? round((float)$_POST['custom_price'], 2) : null;
+
         $cartKey = cartItemKey($productId, $modifiers);
+        // Custom name makes each entry unique in the cart
+        if ($customName !== '') {
+            $cartKey .= '|cn:' . $customName;
+        }
 
         $cart = &$_SESSION['pos_cart'];
         if (!is_array($cart)) $cart = [];
@@ -56,17 +65,28 @@ class ApiController {
         unset($item);
 
         if (!$found) {
-            $cart[] = [
-                'product_id'   => $product['id'],
-                'product_name' => $product['name'],
-                'product_code' => $product['product_code'],
-                'unit_price'   => (float)$product['unit_price'],
-                'quantity'     => $quantity,
-                'tax_profile'  => $product['tax_profile'] ?? 'tax_free',
-                'image'        => $product['image'] ?? null,
-                'modifiers'    => $modifiers,
-                'cart_key'     => $cartKey,
+            $displayName = $product['name'];
+            if ($customName !== '') {
+                $displayName .= ' — ' . $customName;
+            }
+            $unitPrice = $customPrice !== null ? $customPrice : (float)$product['unit_price'];
+            $entry = [
+                'product_id'      => $product['id'],
+                'product_name'    => $displayName,
+                'product_code'    => $product['product_code'],
+                'unit_price'      => $unitPrice,
+                'wholesale_price' => isset($product['wholesale_price']) ? (float)$product['wholesale_price'] : null,
+                'quantity'        => $quantity,
+                'tax_profile'     => $product['tax_profile'] ?? 'tax_free',
+                'image'           => $product['image'] ?? null,
+                'modifiers'       => $modifiers,
+                'cart_key'        => $cartKey,
             ];
+            // Flag loose tea items for special pricing (flat tin cost, $6 min at 50g)
+            if (!empty($_POST['loose_tea'])) {
+                $entry['loose_tea'] = true;
+            }
+            $cart[] = $entry;
         }
 
         $wholesale = !empty($_SESSION['pos_wholesale']);
@@ -245,10 +265,64 @@ class ApiController {
     /** POST /api/print/receipt */
     public function printReceipt(): void {
         $txnId = (int)($_POST['transaction_id'] ?? 0);
+        if ($txnId <= 0) {
+            $this->json(['error' => 'Invalid transaction_id'], 400);
+            return;
+        }
 
         try {
+            $txnModel    = new Transaction();
+            $transaction = $txnModel->findById($txnId);
+            if (!$transaction) {
+                $this->json(['error' => 'Transaction not found'], 404);
+                return;
+            }
+            $items    = $txnModel->getItemsWithModifiers($txnId);
+            $payments = $txnModel->getPayments($txnId);
+            $settings = (new PosSetting())->getAll();
+
+            $payload = [
+                'store_name'    => $settings['store_name']    ?? 'Granville Island Tea Co.',
+                'store_address' => $settings['store_address'] ?? '',
+                'store_phone'   => $settings['store_phone']   ?? '',
+                'transaction_id'=> (int)($transaction['id'] ?? 0),
+                'daily_number'  => $transaction['daily_number']  ?? null,
+                'annual_number' => $transaction['annual_number'] ?? null,
+                'date'          => isset($transaction['created_at'])
+                                    ? date('Y-m-d H:i', strtotime($transaction['created_at']))
+                                    : '',
+                'cashier'       => $transaction['username'] ?? '',
+                'items'         => array_map(fn($i) => [
+                    'name'             => $i['product_name'],
+                    'quantity'         => (int)$i['quantity'],
+                    'unit_price'       => (float)$i['unit_price'],
+                    'line_total'       => (float)$i['line_total'],
+                    'gst'              => (float)$i['gst'],
+                    'pst'              => (float)$i['pst'],
+                    'discount_percent' => (float)($i['discount_percent'] ?? 0),
+                    'modifiers'        => array_map(fn($m) => [
+                        'name'  => $m['modifier_name'],
+                        'price' => (float)$m['modifier_price'],
+                        'qty'   => (int)$m['quantity'],
+                    ], $i['modifiers'] ?? []),
+                ], $items ?? []),
+                'subtotal'       => (float)($transaction['subtotal']   ?? 0),
+                'gst_amount'     => (float)($transaction['gst_amount'] ?? 0),
+                'pst_amount'     => (float)($transaction['pst_amount'] ?? 0),
+                'total'          => (float)($transaction['total']      ?? 0),
+                'payments'       => array_map(fn($p) => [
+                    'method'    => $p['method'],
+                    'amount'    => (float)$p['amount'],
+                    'reference' => $p['reference'] ?? '',
+                ], $payments ?? []),
+                'change'         => 0.0,
+                'gst_number'     => $settings['gst_number']     ?? '',
+                'pst_number'     => $settings['pst_number']     ?? '',
+                'receipt_footer' => $settings['receipt_footer'] ?? 'Thank you for your purchase!',
+            ];
+
             $url  = $this->getTerminalPrintUrl() . '/print/receipt';
-            $data = json_encode(['transaction_id' => $txnId]);
+            $data = json_encode($payload);
 
             $ch = curl_init($url);
             curl_setopt_array($ch, [
@@ -271,6 +345,18 @@ class ApiController {
     /** POST /api/print/open-drawer */
     public function printOpenDrawer(): void {
         try {
+            // Log manual drawer open
+            $db = getDB();
+            $stmt = $db->prepare("
+                INSERT INTO pos_drawer_opens (shift_id, terminal_id, user_id)
+                VALUES (:shift_id, :terminal_id, :user_id)
+            ");
+            $stmt->execute([
+                ':shift_id'    => $_SESSION['pos_shift_id'] ?? null,
+                ':terminal_id' => $_SESSION['pos_terminal_id'] ?? null,
+                ':user_id'     => $_SESSION['pos_user_id'],
+            ]);
+
             $url = $this->getTerminalPrintUrl() . '/print/open-drawer';
             $ch = curl_init($url);
             curl_setopt_array($ch, [
@@ -441,6 +527,61 @@ class ApiController {
         }
     }
 
+    /** POST /api/petty-cash/add */
+    public function pettyCashAdd(): void {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json(['error' => 'POST required'], 405);
+            return;
+        }
+
+        $amount      = round((float)($_POST['amount'] ?? 0), 2);
+        $description = trim($_POST['description'] ?? '');
+        $authBy      = !empty($_POST['authorized_by']) ? (int)$_POST['authorized_by'] : null;
+
+        if ($amount <= 0) {
+            $this->json(['error' => 'Invalid amount'], 400);
+            return;
+        }
+        if (!$description) {
+            $this->json(['error' => 'Description required'], 400);
+            return;
+        }
+
+        $shiftId    = $_SESSION['pos_shift_id'] ?? null;
+        $terminalId = $_SESSION['pos_terminal_id'] ?? null;
+        $operator   = currentOperator();
+
+        if (!$shiftId) {
+            $this->json(['error' => 'No open shift'], 400);
+            return;
+        }
+
+        $model = new PettyCash();
+        $id = $model->create([
+            'shift_id'      => $shiftId,
+            'terminal_id'   => $terminalId,
+            'user_id'       => $operator['id'],
+            'authorized_by' => $authBy,
+            'amount'        => $amount,
+            'description'   => $description,
+        ]);
+
+        $this->json(['id' => $id, 'amount' => $amount, 'description' => $description]);
+    }
+
+    /** GET /api/petty-cash/list */
+    public function pettyCashList(): void {
+        $shiftId = $_SESSION['pos_shift_id'] ?? null;
+        if (!$shiftId) {
+            $this->json(['error' => 'No open shift'], 400);
+            return;
+        }
+
+        $model   = new PettyCash();
+        $summary = $model->getShiftSummary($shiftId);
+        $this->json($summary);
+    }
+
     /** POST /api/temp-auth/verify — Verify a temporary authorization code */
     public function verifyTempAuth(): void {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -484,6 +625,310 @@ class ApiController {
         $this->json($result);
     }
 
+    // ── Hold Order endpoints ────────────────────────────────────────
+
+    /** POST /api/hold/save — serialize current cart to DB, clear session */
+    public function holdSave(): void {
+        $cart = $_SESSION['pos_cart'] ?? [];
+        if (empty($cart)) {
+            $this->json(['error' => 'Cart is empty'], 400);
+            return;
+        }
+
+        $shiftId    = $_SESSION['pos_shift_id'] ?? null;
+        $terminalId = $_SESSION['pos_terminal_id'] ?? null;
+        $operator   = currentOperator();
+
+        if (!$shiftId) {
+            $this->json(['error' => 'No open shift'], 400);
+            return;
+        }
+
+        $wholesale    = !empty($_SESSION['pos_wholesale']);
+        $cartDiscount = !empty($_SESSION['pos_cart_discount']);
+        $totals       = calculateCartTotals($cart, $wholesale, $cartDiscount);
+        $label        = trim($_POST['label'] ?? '');
+
+        $cartState = [
+            'items'         => $cart,
+            'wholesale'     => $wholesale,
+            'cart_discount'  => $cartDiscount,
+        ];
+
+        $model = new HeldOrder();
+        $id = $model->hold(
+            $shiftId,
+            $terminalId,
+            $operator['id'],
+            $label ?: null,
+            $cartState,
+            count($cart),
+            $totals['total']
+        );
+
+        // Clear session cart
+        $_SESSION['pos_cart'] = [];
+        unset($_SESSION['pos_wholesale']);
+        unset($_SESSION['pos_cart_discount']);
+
+        $heldCount = $model->countActiveForShift($shiftId);
+        $this->json(['id' => $id, 'held_count' => $heldCount]);
+    }
+
+    /** GET /api/hold/list — active held orders for this shift */
+    public function holdList(): void {
+        $shiftId = $_SESSION['pos_shift_id'] ?? null;
+        if (!$shiftId) {
+            $this->json(['error' => 'No open shift'], 400);
+            return;
+        }
+
+        $orders = (new HeldOrder())->getActiveForShift($shiftId);
+        $this->json(['orders' => $orders]);
+    }
+
+    /** POST /api/hold/resume — restore a held order to the session cart */
+    public function holdResume(): void {
+        $id = (int)($_POST['id'] ?? 0);
+        if (!$id) {
+            $this->json(['error' => 'ID required'], 400);
+            return;
+        }
+
+        $model = new HeldOrder();
+        $order = $model->findActiveById($id);
+        if (!$order) {
+            $this->json(['error' => 'Held order not found or already resumed'], 404);
+            return;
+        }
+
+        $cartState = json_decode($order['cart_json'], true);
+        if (!$cartState || !isset($cartState['items'])) {
+            $this->json(['error' => 'Invalid cart data'], 500);
+            return;
+        }
+
+        // Restore session cart
+        $_SESSION['pos_cart']          = $cartState['items'];
+        $_SESSION['pos_wholesale']     = !empty($cartState['wholesale']);
+        $_SESSION['pos_cart_discount'] = !empty($cartState['cart_discount']);
+
+        $operator = currentOperator();
+        $model->resume($id, $operator['id']);
+
+        $wholesale    = !empty($_SESSION['pos_wholesale']);
+        $cartDiscount = !empty($_SESSION['pos_cart_discount']);
+        $totals       = calculateCartTotals($_SESSION['pos_cart'], $wholesale, $cartDiscount);
+
+        $shiftId   = $_SESSION['pos_shift_id'] ?? 0;
+        $heldCount = $model->countActiveForShift($shiftId);
+
+        $this->json(array_merge($totals, ['held_count' => $heldCount]));
+    }
+
+    /** POST /api/hold/delete — discard a held order */
+    public function holdDelete(): void {
+        $id = (int)($_POST['id'] ?? 0);
+        if (!$id) {
+            $this->json(['error' => 'ID required'], 400);
+            return;
+        }
+
+        $model = new HeldOrder();
+        $model->deleteHeld($id);
+
+        $shiftId   = $_SESSION['pos_shift_id'] ?? 0;
+        $heldCount = $model->countActiveForShift($shiftId);
+        $this->json(['ok' => true, 'held_count' => $heldCount]);
+    }
+
+    /** GET /api/hold/count — count for badge */
+    public function holdCount(): void {
+        $shiftId = $_SESSION['pos_shift_id'] ?? 0;
+        $count   = (new HeldOrder())->countActiveForShift($shiftId);
+        $this->json(['held_count' => $count]);
+    }
+
+    // ── Moneris endpoints ─────────────────────────────────────────
+
+    /** POST /api/moneris/purchase — initiate a card payment via Moneris Go terminal */
+    public function monerisPurchase(): void {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json(['error' => 'POST required'], 405);
+            return;
+        }
+
+        $terminalId = $_SESSION['pos_terminal_id'] ?? null;
+        if (!$terminalId) {
+            $this->json(['error' => 'No terminal selected'], 400);
+            return;
+        }
+
+        $terminal = (new Terminal())->findById($terminalId);
+        if (!$terminal || empty($terminal['moneris_terminal_id'])) {
+            $this->json(['error' => 'No Moneris terminal ID configured for this register'], 400);
+            return;
+        }
+
+        $cart = $_SESSION['pos_cart'] ?? [];
+        if (empty($cart)) {
+            $this->json(['error' => 'Cart is empty'], 400);
+            return;
+        }
+
+        $wholesale    = !empty($_SESSION['pos_wholesale']);
+        $cartDiscount = !empty($_SESSION['pos_cart_discount']);
+        $totals       = calculateCartTotals($cart, $wholesale, $cartDiscount);
+
+        $amount = (float)($_POST['amount'] ?? $totals['total']);
+        if ($amount <= 0) {
+            $this->json(['error' => 'Invalid amount'], 400);
+            return;
+        }
+
+        // Proportional tax split if paying partial amount
+        $ratio    = $amount / max($totals['total'], 0.01);
+        $subtotal = round($totals['subtotal'] * $ratio, 2);
+        $gst      = round($totals['gst'] * $ratio, 2);
+        $pst      = round($totals['pst'] * $ratio, 2);
+        // Adjust subtotal so subtotal + gst + pst = amount exactly
+        $subtotal = round($amount - $gst - $pst, 2);
+
+        $operator = currentOperator();
+
+        $moneris = new Moneris();
+        $result = $moneris->purchase(
+            $terminal['moneris_terminal_id'],
+            $amount,
+            $subtotal,
+            $gst,
+            $pst,
+            $operator['username']
+        );
+
+        $this->json($result);
+    }
+
+    /** POST /api/moneris/void — void a Moneris transaction */
+    public function monerisVoid(): void {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json(['error' => 'POST required'], 405);
+            return;
+        }
+
+        $monerisId = (int)($_POST['moneris_transaction_id'] ?? 0);
+        if (!$monerisId) {
+            $this->json(['error' => 'Moneris transaction ID required'], 400);
+            return;
+        }
+
+        $moneris = new Moneris();
+        $mTxn = $moneris->findMonerisById($monerisId);
+        if (!$mTxn) {
+            $this->json(['error' => 'Moneris transaction not found'], 404);
+            return;
+        }
+
+        // Need a Moneris terminal to send the void
+        $terminalId = $_SESSION['pos_terminal_id'] ?? null;
+        $monerisTerminalId = null;
+        if ($terminalId) {
+            $terminal = (new Terminal())->findById($terminalId);
+            $monerisTerminalId = $terminal['moneris_terminal_id'] ?? null;
+        }
+        if (!$monerisTerminalId) {
+            // Use the terminal from the original transaction
+            $monerisTerminalId = $mTxn['terminal_id'];
+        }
+
+        $operator = currentOperator();
+        $result = $moneris->void($monerisTerminalId, $mTxn['order_id'], $operator['username']);
+        $this->json($result);
+    }
+
+    /** GET /api/moneris/status?id= — lookup a Moneris transaction (for reconnection) */
+    public function monerisStatus(): void {
+        $monerisId = (int)($_GET['id'] ?? 0);
+        if (!$monerisId) {
+            $this->json(['error' => 'ID required'], 400);
+            return;
+        }
+
+        $moneris = new Moneris();
+        $mTxn = $moneris->findMonerisById($monerisId);
+        if (!$mTxn) {
+            $this->json(['error' => 'Not found'], 404);
+            return;
+        }
+
+        $this->json([
+            'id'          => (int)$mTxn['id'],
+            'completed'   => (bool)$mTxn['completed'],
+            'approved'    => $mTxn['status_code'] === '5207',
+            'status_code' => $mTxn['status_code'],
+            'auth_code'   => $mTxn['auth_code'],
+            'card_type'   => $mTxn['card_type'],
+            'masked_pan'  => $mTxn['masked_pan'],
+            'tender_type' => $mTxn['tender_type'],
+            'form_factor' => $mTxn['form_factor'],
+        ]);
+    }
+
+    /** POST /api/gift-card-sales/add */
+    public function giftCardSalesAdd(): void {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json(['error' => 'POST required'], 405);
+            return;
+        }
+
+        $amount        = round((float)($_POST['amount'] ?? 0), 2);
+        $paymentMethod = $_POST['payment_method'] ?? 'card';
+        $notes         = trim($_POST['notes'] ?? '');
+
+        if ($amount <= 0) {
+            $this->json(['error' => 'Invalid amount'], 400);
+            return;
+        }
+        if (!in_array($paymentMethod, ['cash', 'card'])) {
+            $this->json(['error' => 'Invalid payment method'], 400);
+            return;
+        }
+
+        $shiftId    = $_SESSION['pos_shift_id'] ?? null;
+        $terminalId = $_SESSION['pos_terminal_id'] ?? null;
+        $operator   = currentOperator();
+
+        if (!$shiftId) {
+            $this->json(['error' => 'No open shift'], 400);
+            return;
+        }
+
+        $model = new GiftCardSale();
+        $id = $model->create([
+            'shift_id'       => $shiftId,
+            'terminal_id'    => $terminalId,
+            'user_id'        => $operator['id'],
+            'amount'         => $amount,
+            'payment_method' => $paymentMethod,
+            'notes'          => $notes ?: null,
+        ]);
+
+        $this->json(['id' => $id, 'amount' => $amount, 'payment_method' => $paymentMethod]);
+    }
+
+    /** GET /api/gift-card-sales/list */
+    public function giftCardSalesList(): void {
+        $shiftId = $_SESSION['pos_shift_id'] ?? null;
+        if (!$shiftId) {
+            $this->json(['error' => 'No open shift'], 400);
+            return;
+        }
+
+        $model   = new GiftCardSale();
+        $summary = $model->getShiftSummary($shiftId);
+        $this->json($summary);
+    }
+
     private function getTerminalPrintUrl(): string {
         $terminalId = $_SESSION['pos_terminal_id'] ?? null;
         if ($terminalId) {
@@ -493,6 +938,78 @@ class ApiController {
             }
         }
         return PRINT_SERVICE_URL;
+    }
+
+    /** POST /api/heartbeat — update shift heartbeat for terminal locking */
+    public function heartbeat(): void {
+        $shiftId = $_SESSION['pos_shift_id'] ?? null;
+        if (!$shiftId) {
+            $this->json(['error' => 'No active shift'], 400);
+            return;
+        }
+        (new Shift())->updateHeartbeat($shiftId, session_id());
+        $this->json(['ok' => true]);
+    }
+
+    /** GET /api/currency/usd — today's effective USD→CAD rate */
+    public function currencyUsd(): void {
+        $settings = new PosSetting();
+        $markup   = (float)($settings->get('usd_markup_percent', '2'));
+
+        // Check cache
+        $cacheRaw = $settings->get('usd_rate_cache');
+        $cache    = $cacheRaw ? json_decode($cacheRaw, true) : null;
+        $today    = date('Y-m-d');
+
+        if ($cache && ($cache['date'] ?? '') === $today && !empty($cache['rate'])) {
+            $baseRate = (float)$cache['rate'];
+        } else {
+            // Fetch from Bank of Canada Valet API (USD/CAD daily rate)
+            $baseRate = $this->fetchBocRate();
+
+            if ($baseRate > 0) {
+                $settings->set('usd_rate_cache', json_encode([
+                    'rate' => $baseRate,
+                    'date' => $today,
+                ]));
+            } elseif ($cache && !empty($cache['rate'])) {
+                // API down — fall back to last cached rate
+                $baseRate = (float)$cache['rate'];
+            } else {
+                $this->json(['error' => 'Unable to fetch exchange rate'], 503);
+                return;
+            }
+        }
+
+        $effectiveRate = round($baseRate * (1 + $markup / 100), 4);
+
+        $this->json([
+            'rate'        => $effectiveRate,
+            'base_rate'   => $baseRate,
+            'markup'      => $markup,
+            'cached_date' => $today,
+        ]);
+    }
+
+    /** Fetch USD/CAD from Bank of Canada Valet API */
+    private function fetchBocRate(): float {
+        $url = 'https://www.bankofcanada.ca/valet/observations/FXUSDCAD/json?recent=1';
+        $ctx = stream_context_create([
+            'http' => [
+                'timeout' => 5,
+                'header'  => "User-Agent: GranvilleTeaPOS/1.0\r\n",
+            ],
+        ]);
+
+        $body = @file_get_contents($url, false, $ctx);
+        if (!$body) return 0.0;
+
+        $data = json_decode($body, true);
+        $observations = $data['observations'] ?? [];
+        if (empty($observations)) return 0.0;
+
+        $last = end($observations);
+        return (float)($last['FXUSDCAD']['v'] ?? 0);
     }
 
     private function json(mixed $data, int $code = 200): void {

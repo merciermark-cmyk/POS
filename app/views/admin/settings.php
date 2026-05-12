@@ -58,6 +58,58 @@ ob_start();
         <textarea name="receipt_footer" class="form-control" rows="2"><?= e($settings['receipt_footer'] ?? '') ?></textarea>
     </div>
 
+    <div class="mb-3">
+        <label class="form-label">Standalone Refund Threshold ($)</label>
+        <input type="number" name="standalone_refund_threshold" class="form-control" step="0.01" min="0"
+               value="<?= e($settings['standalone_refund_threshold'] ?? '50.00') ?>">
+        <div class="form-text">Refunds above this amount require manager PIN authorization.</div>
+    </div>
+
+    <hr class="my-4">
+    <h5>Currency</h5>
+
+    <div class="mb-3">
+        <label class="form-label">USD Markup (%)</label>
+        <input type="number" name="usd_markup_percent" class="form-control" step="0.1" min="0" max="20"
+               value="<?= e($settings['usd_markup_percent'] ?? '2') ?>">
+        <div class="form-text">Markup above Bank of Canada rate for USD cash payments. Default 2%.</div>
+    </div>
+
+    <hr class="my-4">
+    <h5>Moneris Integration</h5>
+
+    <div class="mb-3 form-check">
+        <input type="checkbox" name="moneris_enabled" class="form-check-input" id="monerisEnabled"
+               <?= ($settings['moneris_enabled'] ?? '0') === '1' ? 'checked' : '' ?>>
+        <label class="form-check-label" for="monerisEnabled">Enable Moneris Integration</label>
+        <div class="form-text">Send card payments directly to Moneris Go terminal from POS.</div>
+    </div>
+
+    <div class="mb-3 form-check">
+        <input type="checkbox" name="moneris_sandbox" class="form-check-input" id="monerisSandbox"
+               <?= ($settings['moneris_sandbox'] ?? '1') === '1' ? 'checked' : '' ?>>
+        <label class="form-check-label" for="monerisSandbox">Sandbox Mode (testing)</label>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">API Token</label>
+        <input type="text" name="moneris_api_token" class="form-control"
+               value="<?= e($settings['moneris_api_token'] ?? '') ?>" placeholder="e.g. 6R7HpKWlk6CVqINuk4YM">
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Store ID</label>
+        <input type="text" name="moneris_store_id" class="form-control"
+               value="<?= e($settings['moneris_store_id'] ?? '') ?>" placeholder="e.g. mogo145083">
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">IST Config Code</label>
+        <input type="text" name="moneris_ist_config_code" class="form-control"
+               value="<?= e($settings['moneris_ist_config_code'] ?? '') ?>">
+        <div class="form-text">Provided by Moneris during integration setup.</div>
+    </div>
+
     <button type="submit" class="btn btn-primary">Save Settings</button>
 </form>
 

@@ -177,3 +177,33 @@ CREATE TABLE IF NOT EXISTS pos_refund_payments (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_refund_id (refund_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS pos_petty_cash (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    shift_id INT UNSIGNED NOT NULL,
+    terminal_id INT UNSIGNED NULL,
+    user_id INT UNSIGNED NOT NULL,
+    authorized_by INT UNSIGNED NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    description VARCHAR(255) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_shift_id (shift_id),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS pos_held_orders (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    shift_id INT UNSIGNED NOT NULL,
+    terminal_id INT UNSIGNED NULL,
+    held_by INT UNSIGNED NOT NULL,
+    label VARCHAR(100) NULL,
+    cart_json JSON NOT NULL,
+    item_count INT UNSIGNED NOT NULL DEFAULT 0,
+    cart_total DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    status ENUM('held','resumed','expired') NOT NULL DEFAULT 'held',
+    resumed_by INT UNSIGNED NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resumed_at DATETIME NULL,
+    INDEX idx_shift_id (shift_id),
+    INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

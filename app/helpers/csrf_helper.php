@@ -19,7 +19,10 @@ function verifyCsrfToken(): void {
     $submitted = $_POST['csrf_token'] ?? '';
     $expected  = $_SESSION['csrf_token'] ?? '';
     if (!$expected || !hash_equals($expected, $submitted)) {
-        http_response_code(403);
-        die('Invalid CSRF token. Please go back and try again.');
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+        $_SESSION['flash_error'] = 'Your session expired. Please try again.';
+        $redirect = $_SERVER['HTTP_REFERER'] ?? '/';
+        header('Location: ' . $redirect);
+        exit;
     }
 }

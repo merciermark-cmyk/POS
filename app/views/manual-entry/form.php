@@ -27,7 +27,7 @@ ob_start();
                 <option value="">— Select —</option>
                 <?php foreach ($terminals as $t): ?>
                     <option value="<?= $t['id'] ?>"
-                        <?= ($data['terminal_id'] == $t['id'] || (!$data['terminal_id'] && stripos($t['name'], 'cash register') !== false)) ? 'selected' : '' ?>>
+                        <?= ($data['terminal_id'] == $t['id'] || (!$data['terminal_id'] && stripos($t['name'], 'iced tea') !== false)) ? 'selected' : '' ?>>
                         <?= e($t['name']) ?>
                     </option>
                 <?php endforeach; ?>
@@ -40,6 +40,11 @@ ob_start();
             <input type="date" name="entry_date" class="form-control" value="<?= e($data['entry_date']) ?>" required>
         </div>
 
+        <div class="col-12">
+            <h5 class="mb-0">Z Tape Totals</h5>
+            <small class="text-muted">Enter the figures from the cash register Z tape.</small>
+        </div>
+
         <!-- Subtotal -->
         <div class="col-md-4">
             <label class="form-label">Subtotal (pre-tax)</label>
@@ -48,6 +53,7 @@ ob_start();
                 <input type="number" step="0.01" min="0" name="subtotal" id="me_subtotal"
                        class="form-control" value="<?= e($data['subtotal']) ?>" required>
             </div>
+            <small class="text-muted" id="me_gst_check" style="display:none;"></small>
         </div>
 
         <!-- GST -->
@@ -60,15 +66,7 @@ ob_start();
             </div>
         </div>
 
-        <!-- PST -->
-        <div class="col-md-4">
-            <label class="form-label">PST</label>
-            <div class="input-group">
-                <span class="input-group-text">$</span>
-                <input type="number" step="0.01" min="0" name="pst_amount" id="me_pst"
-                       class="form-control" value="<?= e($data['pst_amount']) ?>">
-            </div>
-        </div>
+        <input type="hidden" name="pst_amount" value="0">
 
         <!-- Total (calculated) -->
         <div class="col-md-4">
@@ -88,18 +86,24 @@ ob_start();
 
         <div class="col-12"><hr></div>
 
+        <div class="col-12">
+            <h5 class="mb-0">Drawer Count</h5>
+            <small class="text-muted">Count all cash and coin in the drawer, then enter card terminal totals.</small>
+        </div>
+
         <!-- Cash -->
-        <div class="col-md-4">
-            <label class="form-label">Cash Amount</label>
+        <div class="col-md-3">
+            <label class="form-label">Cash in Drawer</label>
             <div class="input-group">
                 <span class="input-group-text">$</span>
                 <input type="number" step="0.01" min="0" name="cash_amount" id="me_cash"
                        class="form-control" value="<?= e($data['cash_amount']) ?>">
             </div>
+            <small class="text-muted">Includes $150 float</small>
         </div>
 
         <!-- Card -->
-        <div class="col-md-4">
+        <div class="col-md-3">
             <label class="form-label">Card Amount</label>
             <div class="input-group">
                 <span class="input-group-text">$</span>
@@ -108,13 +112,34 @@ ob_start();
             </div>
         </div>
 
+        <!-- Tips (card only) -->
+        <div class="col-md-3">
+            <label class="form-label">Card Tips</label>
+            <div class="input-group">
+                <span class="input-group-text">$</span>
+                <input type="number" step="0.01" min="0" name="tip_amount" id="me_tips"
+                       class="form-control" value="<?= e($data['tip_amount']) ?>">
+            </div>
+        </div>
+
         <!-- Payment total display -->
-        <div class="col-md-4">
-            <label class="form-label">Payment Total</label>
+        <div class="col-md-3">
+            <label class="form-label">Payment Total (without tips)</label>
             <div class="input-group">
                 <span class="input-group-text">$</span>
                 <input type="text" id="me_pay_total" class="form-control" readonly>
             </div>
+        </div>
+
+        <!-- Deposit Amount -->
+        <div class="col-md-3">
+            <label class="form-label">Deposit Amount</label>
+            <div class="input-group">
+                <span class="input-group-text">$</span>
+                <input type="number" step="0.01" min="0" name="deposit_amount" id="me_deposit"
+                       class="form-control" value="<?= e($data['deposit_amount']) ?>">
+            </div>
+            <small class="text-muted">Cash for deposit envelope</small>
         </div>
 
         <!-- Notes -->
@@ -138,13 +163,30 @@ ob_start();
     function recalc() {
         const subtotal = val($('me_subtotal'));
         const gst = val($('me_gst'));
-        const pst = val($('me_pst'));
-        const total = (subtotal + gst + pst).toFixed(2);
+        const total = (subtotal + gst).toFixed(2);
         $('me_total').value = total;
 
+        // Cross-check: GST should be ~5% of subtotal
+        const gstCheck = $('me_gst_check');
+        if (gst > 0 && subtotal > 0) {
+            const expectedSubtotal = Math.round(gst / 0.05 * 100) / 100;
+            const diff = Math.abs(subtotal - expectedSubtotal);
+            if (diff > 0.02) {
+                gstCheck.style.display = 'block';
+                gstCheck.innerHTML = '<span class="text-warning">Expected ~$' + expectedSubtotal.toFixed(2) + ' from GST</span>';
+            } else {
+                gstCheck.style.display = 'block';
+                gstCheck.innerHTML = '<span class="text-success">GST matches</span>';
+            }
+        } else {
+            gstCheck.style.display = 'none';
+        }
+
         const cash = val($('me_cash'));
+        const cashSales = Math.max(0, cash - 150);
         const card = val($('me_card'));
-        const payTotal = (cash + card).toFixed(2);
+        const tips = val($('me_tips'));
+        const payTotal = (cashSales + card).toFixed(2);
         $('me_pay_total').value = payTotal;
 
         // Highlight if payment < total
@@ -158,7 +200,7 @@ ob_start();
         }
     }
 
-    ['me_subtotal','me_gst','me_pst','me_cash','me_card'].forEach(id => {
+    ['me_subtotal','me_gst','me_cash','me_card','me_tips'].forEach(id => {
         $(id).addEventListener('input', recalc);
     });
 

@@ -12,12 +12,12 @@ class GiftCard extends BaseModel {
         $psDb   = PS_DB_NAME;
 
         return $this->findOne(
-            "SELECT c.code, c.balance, c.active, c.date_add, c.date_expiration
+            "SELECT c.code, c.reduction_amount AS balance, c.active, c.date_add, c.date_to
              FROM `$psDb`.`{$prefix}cart_rule` c
-             WHERE c.code = ?
+             WHERE c.code COLLATE utf8mb4_unicode_ci = ?
                AND c.active = 1
-               AND (c.date_expiration IS NULL OR c.date_expiration > NOW())
-               COLLATE utf8mb4_unicode_ci",
+               AND c.quantity > 0
+               AND (c.date_to = '0000-00-00 00:00:00' OR c.date_to > NOW())",
             [$code]
         );
     }
@@ -41,8 +41,8 @@ class GiftCard extends BaseModel {
 
         $this->execute(
             "UPDATE `$psDb`.`{$prefix}cart_rule`
-             SET balance = ?
-             WHERE code = ?",
+             SET reduction_amount = ?
+             WHERE code COLLATE utf8mb4_unicode_ci = ?",
             [$newBalance, $code]
         );
 
@@ -50,8 +50,8 @@ class GiftCard extends BaseModel {
         if ($newBalance <= 0) {
             $this->execute(
                 "UPDATE `$psDb`.`{$prefix}cart_rule`
-                 SET active = 0
-                 WHERE code = ?",
+                 SET active = 0, quantity = 0
+                 WHERE code COLLATE utf8mb4_unicode_ci = ?",
                 [$code]
             );
         }

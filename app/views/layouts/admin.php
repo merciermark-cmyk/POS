@@ -30,6 +30,13 @@ $currentPath = $_GET['url'] ?? '';
                     <li class="nav-item">
                         <a class="nav-link" href="<?= baseUrl('transactions') ?>">Transactions</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="<?= baseUrl('manual-entry') ?>">Manual Entry</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link <?= str_starts_with($currentPath, 'dayclose') ? 'active' : '' ?>"
+                           href="<?= baseUrl('dayclose') ?>">Close Registers</a>
+                    </li>
                     <?php if (isManager()): ?>
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">Reports</a>
@@ -38,9 +45,10 @@ $currentPath = $_GET['url'] ?? '';
                             <li><a class="dropdown-item" href="<?= baseUrl('reports/monthly') ?>">Monthly Sales</a></li>
                             <li><a class="dropdown-item" href="<?= baseUrl('reports/product-sales') ?>">Product Sales</a></li>
                             <li><a class="dropdown-item" href="<?= baseUrl('reports/transaction-search') ?>">Transaction Search</a></li>
+                            <li><a class="dropdown-item" href="<?= baseUrl('reports/hourly-sales') ?>">Hourly Sales</a></li>
+                            <li><a class="dropdown-item" href="<?= baseUrl('reports/cash-spot-check') ?>">Cash Spot Check</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="<?= baseUrl('shift/history') ?>">Shift History</a></li>
-                            <li><a class="dropdown-item" href="<?= baseUrl('manual-entry') ?>">Manual Entry</a></li>
                         </ul>
                     </li>
                     <li class="nav-item">
@@ -60,16 +68,25 @@ $currentPath = $_GET['url'] ?? '';
                     <?php endif; ?>
                 </ul>
                 <ul class="navbar-nav">
-                    <?php if (!empty($_SESSION['pos_shift_id'])): ?>
-                        <li class="nav-item">
-                            <a class="nav-link text-warning" href="<?= baseUrl('shift/close') ?>">Close Shift</a>
-                        </li>
-                    <?php endif; ?>
-                    <li class="nav-item">
-                        <span class="nav-link text-light"><?= e(currentUser()['username']) ?></span>
+                    <?php
+                    $__terminals = (new Terminal())->getActive();
+                    $__currentTid = $_SESSION['pos_terminal_id'] ?? null;
+                    $__currentName = 'No Terminal';
+                    foreach ($__terminals as $__t) { if ($__t['id'] == $__currentTid) { $__currentName = $__t['name']; break; } }
+                    ?>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle text-warning" href="#" data-bs-toggle="dropdown"><?= e($__currentName) ?></a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <?php foreach ($__terminals as $__t): ?>
+                                <li><a class="dropdown-item <?= $__t['id'] == $__currentTid ? 'active' : '' ?>" href="<?= baseUrl('set-terminal/' . $__t['id']) ?>"><?= e($__t['name']) ?></a></li>
+                            <?php endforeach; ?>
+                        </ul>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="<?= baseUrl('logout') ?>">Logout</a>
+                        <span class="nav-link text-light"><?= e(currentUser()['username'] ?: (currentOperator()['username'] ?? '')) ?></span>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="<?= baseUrl('sale') ?>">Back to Terminal</a>
                     </li>
                 </ul>
             </div>

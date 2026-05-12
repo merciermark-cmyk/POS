@@ -4,13 +4,18 @@ class UserController {
     public function index(): void {
         requireManager();
         $users = (new PosUser())->getAll();
+        $schedUsers = (new ScheduleAttendance())->getScheduleUsers();
+        $schedMap = [];
+        foreach ($schedUsers as $su) {
+            $schedMap[$su['id']] = $su['name'];
+        }
         require APP_PATH . '/views/admin/users/index.php';
     }
 
     public function create(): void {
         requireManager();
         $errors = [];
-        $user   = ['username' => '', 'pin' => '', 'staff_code' => '', 'role' => ROLE_CASHIER, 'is_active' => 1];
+        $user   = ['username' => '', 'pin' => '', 'role' => ROLE_CASHIER, 'is_active' => 1];
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             verifyCsrfToken();
@@ -18,7 +23,6 @@ class UserController {
                 'username'   => trim($_POST['username'] ?? ''),
                 'password'   => $_POST['password'] ?? '',
                 'pin'        => trim($_POST['pin'] ?? ''),
-                'staff_code' => trim($_POST['staff_code'] ?? ''),
                 'role'       => $_POST['role'] ?? ROLE_CASHIER,
                 'is_active'  => isset($_POST['is_active']) ? 1 : 0,
             ];
@@ -26,8 +30,7 @@ class UserController {
 
             if (strlen($data['username']) < 3) $errors[] = 'Username must be at least 3 characters.';
             if (strlen($data['password']) < 6) $errors[] = 'Password must be at least 6 characters.';
-            if ($data['pin'] && !preg_match('/^\d{4}$/', $data['pin'])) $errors[] = 'PIN must be 4 digits.';
-            if ($data['staff_code'] && !preg_match('/^\d{3}$/', $data['staff_code'])) $errors[] = 'Staff code must be 3 digits.';
+            if ($data['pin'] && !preg_match('/^\d{1,3}$/', $data['pin'])) $errors[] = 'PIN must be 1–3 digits.';
 
             if (empty($errors)) {
                 try {
@@ -61,18 +64,17 @@ class UserController {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             verifyCsrfToken();
             $data = [
-                'username'   => trim($_POST['username'] ?? ''),
-                'password'   => $_POST['password'] ?? '',
-                'pin'        => trim($_POST['pin'] ?? ''),
-                'staff_code' => trim($_POST['staff_code'] ?? ''),
-                'role'       => $_POST['role'] ?? ROLE_CASHIER,
-                'is_active'  => isset($_POST['is_active']) ? 1 : 0,
+                'username'         => trim($_POST['username'] ?? ''),
+                'password'         => $_POST['password'] ?? '',
+                'pin'              => trim($_POST['pin'] ?? ''),
+                'role'             => $_POST['role'] ?? ROLE_CASHIER,
+                'is_active'        => isset($_POST['is_active']) ? 1 : 0,
+                'schedule_user_id' => ($_POST['schedule_user_id'] ?? '') !== '' ? (int)$_POST['schedule_user_id'] : null,
             ];
 
             if (strlen($data['username']) < 3) $errors[] = 'Username must be at least 3 characters.';
             if ($data['password'] && strlen($data['password']) < 6) $errors[] = 'Password must be at least 6 characters.';
-            if ($data['pin'] && !preg_match('/^\d{4}$/', $data['pin'])) $errors[] = 'PIN must be 4 digits.';
-            if ($data['staff_code'] && !preg_match('/^\d{3}$/', $data['staff_code'])) $errors[] = 'Staff code must be 3 digits.';
+            if ($data['pin'] && !preg_match('/^\d{1,3}$/', $data['pin'])) $errors[] = 'PIN must be 1–3 digits.';
 
             if (empty($errors)) {
                 try {
@@ -89,6 +91,7 @@ class UserController {
         }
 
         $editing = true;
+        $schedUsers = (new ScheduleAttendance())->getScheduleUsers();
         require APP_PATH . '/views/admin/users/form.php';
     }
 

@@ -10,14 +10,15 @@ class TerminalController {
     public function create(): void {
         requireManager();
         $errors   = [];
-        $terminal = ['name' => '', 'print_service_url' => 'http://localhost:5000', 'is_active' => 1];
+        $terminal = ['name' => '', 'print_service_url' => 'http://localhost:5000', 'moneris_terminal_id' => '', 'is_active' => 1];
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             verifyCsrfToken();
             $data = [
-                'name'              => trim($_POST['name'] ?? ''),
-                'print_service_url' => trim($_POST['print_service_url'] ?? 'http://localhost:5000'),
-                'is_active'         => isset($_POST['is_active']) ? 1 : 0,
+                'name'                => trim($_POST['name'] ?? ''),
+                'print_service_url'   => trim($_POST['print_service_url'] ?? 'http://localhost:5000'),
+                'moneris_terminal_id' => trim($_POST['moneris_terminal_id'] ?? ''),
+                'is_active'           => isset($_POST['is_active']) ? 1 : 0,
             ];
             $terminal = $data;
 
@@ -56,9 +57,10 @@ class TerminalController {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             verifyCsrfToken();
             $data = [
-                'name'              => trim($_POST['name'] ?? ''),
-                'print_service_url' => trim($_POST['print_service_url'] ?? 'http://localhost:5000'),
-                'is_active'         => isset($_POST['is_active']) ? 1 : 0,
+                'name'                => trim($_POST['name'] ?? ''),
+                'print_service_url'   => trim($_POST['print_service_url'] ?? 'http://localhost:5000'),
+                'moneris_terminal_id' => trim($_POST['moneris_terminal_id'] ?? ''),
+                'is_active'           => isset($_POST['is_active']) ? 1 : 0,
             ];
 
             if (strlen($data['name']) < 1) $errors[] = 'Name is required.';

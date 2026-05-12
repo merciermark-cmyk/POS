@@ -53,6 +53,17 @@ class StandaloneRefund extends BaseModel {
         return (float)($row['total'] ?? 0);
     }
 
+    /** Total standalone card refunds for a shift. */
+    public function getCardRefundsTotal(int $shiftId): float {
+        $row = $this->findOne(
+            "SELECT COALESCE(SUM(amount), 0) AS total
+             FROM pos_standalone_refunds
+             WHERE shift_id = ? AND payment_method IN ('card','moneris')",
+            [$shiftId]
+        );
+        return (float)($row['total'] ?? 0);
+    }
+
     /** Count + total for shift summary. */
     public function getShiftTotals(int $shiftId): array {
         $row = $this->findOne(

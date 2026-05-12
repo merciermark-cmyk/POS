@@ -35,7 +35,12 @@
             </div>
             <div class="mb-3">
                 <label class="form-label">Password</label>
-                <input type="password" name="password" class="form-control form-control-lg" required>
+                <div class="input-group">
+                    <input type="password" name="password" id="password" class="form-control form-control-lg" required>
+                    <button type="button" class="btn btn-outline-secondary" tabindex="-1"
+                            onclick="let p=document.getElementById('password');let s=p.type==='password';p.type=s?'text':'password';this.textContent=s?'Hide':'Show'"
+                            >Show</button>
+                </div>
             </div>
             <button type="submit" class="btn btn-primary btn-lg w-100">Log In</button>
         </form>

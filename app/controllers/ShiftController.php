@@ -6,94 +6,64 @@ class ShiftController {
 
         $shiftModel    = new Shift();
         $terminalModel = new Terminal();
+        $user          = currentUser();
 
-        // Check if already has an open shift
-        $user = currentUser();
-        $existing = $shiftModel->getOpen($user['id']);
-        if ($existing) {
-            $_SESSION['pos_shift_id'] = $existing['id'];
-            if ($existing['terminal_id']) {
-                $_SESSION['pos_terminal_id'] = $existing['terminal_id'];
+        // Block opening a second shift if one is already active in this session
+        $existingShiftId = $_SESSION['pos_shift_id'] ?? null;
+        if ($existingShiftId) {
+            $existingShift = $shiftModel->findById((int)$existingShiftId);
+            if ($existingShift && $existingShift['status'] === 'open') {
+                $existingTerminal = $terminalModel->findById((int)$existingShift['terminal_id']);
+                $terminalName = $existingTerminal['name'] ?? 'Unknown';
+                setFlash('error', 'You already have a shift open on "' . $terminalName . '". Close it first or go to the terminal.');
+                redirect('/');
+                return;
             }
-            redirect('/');
-            return;
         }
-
-        $terminals = $terminalModel->getActive();
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             verifyCsrfToken();
+            $selectedTerminalId = (int)($_POST['terminal_id'] ?? 0);
+
+            $terminal = $terminalModel->findById($selectedTerminalId);
+            if (!$terminal || !$terminal['is_active']) {
+                setFlash('error', 'Invalid terminal.');
+                redirect('/shift/open');
+                return;
+            }
+
+            if ($shiftModel->getOpenForTerminal($selectedTerminalId)) {
+                setFlash('error', 'A shift is already open on "' . $terminal['name'] . '". Close it first.');
+                redirect('/shift/open');
+                return;
+            }
+
             $openingFloat = round((float)($_POST['opening_float'] ?? 0), 2);
-            $terminalId   = !empty($_POST['terminal_id']) ? (int)$_POST['terminal_id'] : null;
-
-            // Validate terminal selection
-            if ($terminalId) {
-                $terminal = $terminalModel->findById($terminalId);
-                if (!$terminal || !$terminal['is_active']) {
-                    setFlash('error', 'Invalid terminal selected.');
-                    require APP_PATH . '/views/shift/open.php';
-                    return;
-                }
-                // Prevent two shifts on the same terminal
-                if ($terminal && $shiftModel->getOpenForTerminal($terminalId)) {
-                    setFlash('error', 'A shift is already open on "' . $terminal['name'] . '". Close it first.');
-                    require APP_PATH . '/views/shift/open.php';
-                    return;
-                }
-            }
-
-            $shiftId = $shiftModel->open($user['id'], $openingFloat, $terminalId);
+            $shiftId = $shiftModel->open($user['id'], $openingFloat, $selectedTerminalId);
             $_SESSION['pos_shift_id'] = $shiftId;
+            $_SESSION['pos_terminal_id'] = $selectedTerminalId;
+            $shiftModel->updateHeartbeat($shiftId, session_id());
 
-            if ($terminalId) {
-                $_SESSION['pos_terminal_id'] = $terminalId;
-                // Set cookie for 30 days so this machine remembers its terminal
-                setcookie('pos_terminal_id', (string)$terminalId, time() + (86400 * 30), '/');
-            }
-
-            setFlash('success', 'Shift opened.');
+            setFlash('success', 'Shift opened on ' . $terminal['name'] . '.');
             redirect('/');
             return;
         }
 
-        // Pre-select terminal from cookie
-        $cookieTerminalId = !empty($_COOKIE['pos_terminal_id']) ? (int)$_COOKIE['pos_terminal_id'] : null;
+        // GET — build terminal list with open-shift status
+        $terminals = $terminalModel->getForShifts();
+        foreach ($terminals as &$t) {
+            $openShift = $shiftModel->getOpenForTerminal($t['id']);
+            $t['open_shift'] = $openShift;
+            $t['has_open_shift'] = (bool)$openShift;
+            $t['in_use'] = $openShift ? $shiftModel->isInUse($openShift['id'], session_id()) : false;
+        }
+        unset($t);
+
+        // Pre-fill opening float from last DayClose
+        $dcModel = new DayClose();
+        $lastFloats = $dcModel->getLastFloatTotals() ?? [];
 
         require APP_PATH . '/views/shift/open.php';
-    }
-
-    public function close(): void {
-        requireAuth();
-
-        if (empty($_SESSION['pos_shift_id'])) {
-            setFlash('error', 'No open shift.');
-            redirect('/');
-            return;
-        }
-
-        $shiftModel = new Shift();
-        $shiftId    = $_SESSION['pos_shift_id'];
-        $shift      = $shiftModel->findById($shiftId);
-        $summary    = $shiftModel->getShiftSummary($shiftId);
-
-        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            verifyCsrfToken();
-            $closingCash = round((float)($_POST['closing_cash'] ?? 0), 2);
-            $notes       = trim($_POST['notes'] ?? '');
-
-            $result = $shiftModel->close($shiftId, $closingCash, $notes);
-            unset($_SESSION['pos_shift_id']);
-            unset($_SESSION['pos_terminal_id']);
-            clearOperator();
-
-            $_SESSION['closed_shift_result'] = $result;
-            $_SESSION['closed_shift_id']     = $shiftId;
-
-            redirect('/shift/report/' . $shiftId);
-            return;
-        }
-
-        require APP_PATH . '/views/shift/close.php';
     }
 
     public function report(): void {
@@ -118,7 +88,90 @@ class ShiftController {
         $txnModel     = new Transaction();
         $transactions = $txnModel->getForShift($shiftId);
 
+        // Non-tracked product sales (track_inventory = 0)
+        $nonTrackedSales = [];
+        if ($shift) {
+            $db = getDB();
+            $stmt = $db->prepare(
+                'SELECT p.name AS product_name, SUM(ti.quantity) AS qty,
+                        SUM(ti.line_total) AS total
+                 FROM pos_transaction_items ti
+                 JOIN pos_transactions t ON t.id = ti.transaction_id
+                 JOIN products p ON p.id = ti.product_id
+                 WHERE t.shift_id = ? AND t.status = "completed"
+                   AND p.track_inventory = 0
+                 GROUP BY p.id, p.name
+                 ORDER BY p.name'
+            );
+            $stmt->execute([$shiftId]);
+            $nonTrackedSales = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        }
+
+        // Web sales (shipped orders from PrestaShop)
+        $webSales = ['orders' => [], 'count' => 0, 'total' => 0.0];
+        if (PS_DB_NAME && $shift) {
+            $shiftDate = date('Y-m-d', strtotime($shift['opened_at']));
+            $webSales  = (new WebOrder())->getSummaryForDate($shiftDate);
+        }
+
         require APP_PATH . '/views/shift/report.php';
+    }
+
+    public function edit(): void {
+        requireAuth();
+        requireManager();
+
+        $shiftId = (int)($_GET['id'] ?? 0);
+        $shiftModel = new Shift();
+        $shift = $shiftModel->findById($shiftId);
+
+        if (!$shift) {
+            setFlash('error', 'Shift not found.');
+            redirect('/shift/history');
+            return;
+        }
+
+        $summary = $shiftModel->getShiftSummary($shiftId);
+        $terminalName = null;
+        if ($shift['terminal_id']) {
+            $terminal = (new Terminal())->findById($shift['terminal_id']);
+            $terminalName = $terminal['name'] ?? null;
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            verifyCsrfToken();
+
+            $openingFloat = trim($_POST['opening_float'] ?? '') !== '' ? round((float)$_POST['opening_float'], 2) : null;
+            $closingCard = trim($_POST['closing_card'] ?? '') !== '' ? round((float)$_POST['closing_card'], 2) : null;
+            $closingTips = trim($_POST['closing_tips'] ?? '') !== '' ? round((float)$_POST['closing_tips'], 2) : null;
+            $cashDeposit = trim($_POST['cash_deposit'] ?? '') !== '' ? round((float)$_POST['cash_deposit'], 2) : null;
+            $notes       = trim($_POST['notes'] ?? '');
+
+            // Recalculate card reconciliation (tips are included in terminal batch, so subtract them)
+            $expectedCard  = null;
+            $cardOverShort = null;
+            if ($closingCard !== null) {
+                $cardPayments = $shiftModel->getCardPaymentsTotal($shiftId);
+                $cardRefunds  = $shiftModel->getCardRefundsTotal($shiftId);
+                $standaloneCardRefunds = (new StandaloneRefund())->getCardRefundsTotal($shiftId);
+                $gcCardTotal = (new GiftCardSale())->getCardTotal($shiftId);
+                $expectedCard  = round($cardPayments - $cardRefunds - $standaloneCardRefunds + $gcCardTotal, 2);
+                $tips = $closingTips ?? 0;
+                $cardOverShort = round($closingCard - $expectedCard - $tips, 2);
+            }
+
+            $db = getDB();
+            $sets = 'opening_float = ?, cash_deposit = ?, closing_card = ?, expected_card = ?, card_over_short = ?, closing_tips = ?, notes = ?';
+            $params = [$openingFloat ?? $shift['opening_float'], $cashDeposit, $closingCard, $expectedCard, $cardOverShort, $closingTips, $notes, $shiftId];
+            $stmt = $db->prepare("UPDATE pos_shifts SET $sets WHERE id = ?");
+            $stmt->execute($params);
+
+            setFlash('success', 'Shift updated.');
+            redirect('/shift/report/' . $shiftId);
+            return;
+        }
+
+        require APP_PATH . '/views/shift/edit.php';
     }
 
     public function history(): void {

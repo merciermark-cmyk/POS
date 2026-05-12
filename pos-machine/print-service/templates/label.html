@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Labels</title>
+    <meta name="apple-mobile-web-app-title" content="Labels">
+    <meta name="application-name" content="Labels">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        * { -webkit-tap-highlight-color: transparent; }
+        html, body { height: 100%; overflow: hidden; }
+        body { background: #f8f9fa; display: flex; flex-direction: column; }
+
+        .search-bar {
+            position: sticky; top: 0; z-index: 10;
+            background: #f8f9fa; padding: 12px 16px 8px;
+        }
+        .search-bar input {
+            font-size: 16px; /* prevents iOS/Android zoom */
+            padding: 14px 16px;
+            border-radius: 12px;
+        }
+
+        .product-area {
+            flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+            padding: 0 16px 16px;
+        }
+
+        .category-header {
+            font-size: 0.85rem; font-weight: 700; color: #6c757d;
+            text-transform: uppercase; letter-spacing: 0.5px;
+            padding: 12px 4px 6px; position: sticky; top: 0;
+            background: #f8f9fa; z-index: 2;
+        }
+
+        .product-item {
+            display: flex; align-items: center; justify-content: space-between;
+            min-height: 56px; padding: 12px 16px;
+            background: #fff; border-radius: 10px; margin-bottom: 6px;
+            cursor: pointer; transition: background 0.1s, box-shadow 0.1s;
+            border: 2px solid transparent;
+            -webkit-user-select: none; user-select: none;
+        }
+        .product-item:active { background: #e3f2fd; }
+        .product-item.selected { border-color: #0d6efd; background: #e7f1ff; }
+        .product-item .p-name { font-weight: 600; font-size: 1.05rem; }
+        .product-item .p-meta { font-size: 0.82rem; color: #6c757d; margin-top: 2px; }
+
+        .empty-msg { text-align: center; color: #adb5bd; padding: 48px 16px; font-size: 1.1rem; }
+
+        /* Bottom preview/print panel */
+        .print-panel {
+            position: sticky; bottom: 0; z-index: 20;
+            background: #fff; border-top: 1px solid #dee2e6;
+            padding: 12px 16px; box-shadow: 0 -2px 12px rgba(0,0,0,0.08);
+            transform: translateY(100%); transition: transform 0.25s ease;
+        }
+        .print-panel.visible { transform: translateY(0); }
+
+        .preview-row {
+            display: flex; align-items: center; gap: 12px;
+            margin-bottom: 10px;
+        }
+        .preview-info { flex: 1; min-width: 0; }
+        .preview-info .pv-name { font-weight: 700; font-size: 1.05rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .preview-info .pv-detail { font-size: 0.82rem; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .btn-print {
+            width: 100%; min-height: 56px; font-size: 1.2rem; font-weight: 700;
+            border-radius: 12px;
+        }
+
+        #printStatus {
+            min-height: 0; transition: min-height 0.2s;
+        }
+        #printStatus .alert { margin: 8px 0 0; padding: 10px 16px; border-radius: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="search-bar">
+    <input type="search" class="form-control form-control-lg" id="searchInput"
+           placeholder="Search loose teas..." autocomplete="off" autofocus>
+</div>
+
+<div class="product-area" id="productArea">
+    <div class="empty-msg" id="loadingMsg">Loading products...</div>
+</div>
+
+<div class="print-panel" id="printPanel">
+    <div class="preview-row">
+        <div class="preview-info">
+            <div class="pv-name" id="pvName"></div>
+            <div class="pv-detail" id="pvDetail"></div>
+        </div>
+    </div>
+    <div class="d-flex align-items-center gap-2 mb-2">
+        <label class="fw-bold text-nowrap mb-0" style="font-size:0.95rem">Qty:</label>
+        <button class="btn btn-outline-secondary" style="width:48px;height:48px;font-size:1.3rem;font-weight:700" onclick="adjustQty(-1)">&minus;</button>
+        <input type="number" id="labelQty" class="form-control text-center fw-bold" value="1" min="1" max="50" style="width:64px;height:48px;font-size:1.2rem">
+        <button class="btn btn-outline-secondary" style="width:48px;height:48px;font-size:1.3rem;font-weight:700" onclick="adjustQty(1)">+</button>
+    </div>
+    <button class="btn btn-success btn-print" id="printBtn">Print Label</button>
+    <div id="printStatus"></div>
+</div>
+
+<script>
+const PRINT_URL = window.location.origin;
+let allProducts = [];
+let selectedProduct = null;
+
+async function loadProducts(query) {
+    const url = query
+        ? `${PRINT_URL}/api/products?q=${encodeURIComponent(query)}`
+        : `${PRINT_URL}/api/products`;
+    try {
+        const resp = await fetch(url);
+        allProducts = await resp.json();
+        renderProducts(allProducts);
+    } catch (e) {
+        document.getElementById('productArea').innerHTML =
+            '<div class="empty-msg" style="color:#dc3545">Failed to load products</div>';
+    }
+}
+
+function renderProducts(products) {
+    const area = document.getElementById('productArea');
+    if (!products.length) {
+        area.innerHTML = '<div class="empty-msg">No products found</div>';
+        return;
+    }
+    let html = '';
+    let currentCat = null;
+    for (const p of products) {
+        if (p.category !== currentCat) {
+            currentCat = p.category;
+            html += `<div class="category-header">${esc(currentCat)}</div>`;
+        }
+        const sel = selectedProduct && selectedProduct.id === p.id ? ' selected' : '';
+        html += `<div class="product-item${sel}" data-id="${p.id}" onclick="selectProduct(${p.id})">
+            <div>
+                <div class="p-name">${esc(p.name)}</div>
+                <div class="p-meta">${esc(p.product_code || '')}</div>
+            </div>
+        </div>`;
+    }
+    area.innerHTML = html;
+}
+
+function selectProduct(id) {
+    selectedProduct = allProducts.find(p => p.id === id) || null;
+    renderProducts(allProducts);
+    const panel = document.getElementById('printPanel');
+    if (selectedProduct) {
+        document.getElementById('pvName').textContent = selectedProduct.name;
+        const parts = [];
+        if (selectedProduct.product_code) parts.push('PLU: ' + selectedProduct.product_code);
+        if (selectedProduct.brewing_instructions) parts.push(selectedProduct.brewing_instructions);
+        document.getElementById('pvDetail').textContent = parts.join(' — ');
+        document.getElementById('labelQty').value = 1;
+        updatePrintBtn();
+        panel.classList.add('visible');
+    } else {
+        panel.classList.remove('visible');
+    }
+    // Clear any old status
+    document.getElementById('printStatus').innerHTML = '';
+}
+
+function adjustQty(delta) {
+    const inp = document.getElementById('labelQty');
+    let val = Math.max(1, Math.min(50, parseInt(inp.value || '1') + delta));
+    inp.value = val;
+    updatePrintBtn();
+}
+document.getElementById('labelQty').addEventListener('input', updatePrintBtn);
+function updatePrintBtn() {
+    const qty = parseInt(document.getElementById('labelQty').value || '1');
+    document.getElementById('printBtn').textContent = qty > 1 ? `Print ${qty} Labels` : 'Print Label';
+}
+
+// Print
+document.getElementById('printBtn').addEventListener('click', async function() {
+    if (!selectedProduct) return;
+    const btn = this;
+    const qty = Math.max(1, Math.min(50, parseInt(document.getElementById('labelQty').value || '1')));
+    btn.disabled = true;
+    btn.textContent = 'Printing...';
+    showStatus(`Sending ${qty} label${qty > 1 ? 's' : ''} to printer...`, 'info');
+    try {
+        const resp = await fetch(`${PRINT_URL}/print/label`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ product_id: selectedProduct.id, qty: qty })
+        });
+        const result = await resp.json();
+        if (resp.ok) {
+            showStatus(`${qty} label${qty > 1 ? 's' : ''} printed!`, 'success');
+        } else {
+            showStatus(result.message || 'Print failed', 'danger');
+        }
+    } catch (e) {
+        showStatus('Connection error — is the printer connected?', 'danger');
+    }
+    btn.disabled = false;
+    updatePrintBtn();
+});
+
+// Search with debounce
+let searchTimer;
+document.getElementById('searchInput').addEventListener('input', function() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => loadProducts(this.value), 300);
+});
+
+function showStatus(msg, type) {
+    const el = document.getElementById('printStatus');
+    el.innerHTML = `<div class="alert alert-${type} py-2 mb-0">${msg}</div>`;
+    if (type === 'success' || type === 'info') setTimeout(() => el.innerHTML = '', 3000);
+}
+
+function esc(str) {
+    if (!str) return '';
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+}
+
+// Initial load
+loadProducts('');
+</script>
+</body>
+</html>

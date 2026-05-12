@@ -4,16 +4,25 @@
  */
 
 function requireAuth(): void {
-    if (empty($_SESSION['pos_user_id'])) {
+    if (empty($_SESSION['pos_user_id']) && empty($_SESSION['pos_operator_id'])) {
+        // Preserve intended destination through login flow
+        $uri = $_SERVER['REQUEST_URI'] ?? '';
+        $base = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? ''), '/\\');
+        if ($base) {
+            $uri = substr($uri, strlen($base));
+        }
+        if ($uri && $uri !== '/' && $uri !== '/login' && $uri !== '/pin') {
+            $_SESSION['pos_redirect_after_login'] = $uri;
+        }
         redirect('/login');
     }
 }
 
 function requireManager(): void {
     requireAuth();
-    if (($_SESSION['pos_user_role'] ?? '') !== ROLE_MANAGER) {
-        http_response_code(403);
-        die('Access denied. Manager privileges required.');
+    if (!isManager()) {
+        setFlash('error', 'Access denied. Manager privileges required.');
+        redirect('/');
     }
 }
 
@@ -33,11 +42,12 @@ function currentUser(): array {
 }
 
 function isManager(): bool {
-    return ($_SESSION['pos_user_role'] ?? '') === ROLE_MANAGER;
+    $role = $_SESSION['pos_user_role'] ?? $_SESSION['pos_operator_role'] ?? '';
+    return $role === ROLE_MANAGER;
 }
 
 function isLoggedIn(): bool {
-    return !empty($_SESSION['pos_user_id']);
+    return !empty($_SESSION['pos_user_id']) || !empty($_SESSION['pos_operator_id']);
 }
 
 // ── Operator helpers ─────────────────────────────────────────────────────────
@@ -72,9 +82,15 @@ function clearOperator(): void {
         $_SESSION['pos_operator_id'],
         $_SESSION['pos_operator_username'],
         $_SESSION['pos_operator_role'],
-        $_SESSION['pos_cart']
+        $_SESSION['pos_user_id'],
+        $_SESSION['pos_user_username'],
+        $_SESSION['pos_user_role'],
+        $_SESSION['pos_cart'],
+        $_SESSION['pos_wholesale'],
+        $_SESSION['pos_cart_discount']
     );
     unset($_SESSION['operator_last_activity']);
+    unset($_SESSION['last_activity']);
 }
 
 /** Flash message helpers */

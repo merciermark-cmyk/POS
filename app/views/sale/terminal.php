@@ -1,6 +1,6 @@
 <?php
 $pageTitle = 'Terminal';
-$scripts = ['public/js/pos.js', 'public/js/payment.js', 'public/js/idle-timer.js', 'public/js/standalone-refund.js'];
+$scripts = ['public/js/pos.js', 'public/js/payment.js', 'public/js/idle-timer.js', 'public/js/standalone-refund.js', 'public/js/admin-menu.js'];
 ob_start();
 ?>
 <meta name="operator-timeout" content="<?= OPERATOR_TIMEOUT ?>">
@@ -9,8 +9,12 @@ ob_start();
 <script>
 var POS_CATEGORY_TREE = <?= json_encode($categoryTree) ?>;
 var POS_BEVERAGE_CAT_IDS = <?= json_encode($beverageCatIds) ?>;
+var POS_LOOSE_TEA_CAT_IDS = <?= json_encode($looseTeaCatIds) ?>;
 var POS_MODIFIERS = <?= json_encode($activeModifiers) ?>;
 var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
+var POS_HELD_COUNT = <?= (int)$heldOrderCount ?>;
+var POS_MONERIS_ENABLED = <?= json_encode(($settings['moneris_enabled'] ?? '0') === '1' && !empty(($terminal ?? [])['moneris_terminal_id'] ?? '')) ?>;
+var POS_MONERIS_TERMINAL_ID = <?= json_encode(($terminal ?? [])['moneris_terminal_id'] ?? '') ?>;
 </script>
 
 <div class="pos-terminal">
@@ -25,14 +29,13 @@ var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
                 <span class="text-light opacity-75">Cashier: <?= e(currentOperator()['username']) ?></span>
             </div>
             <div class="d-flex align-items-center gap-2">
-                <button class="btn btn-danger btn-sm" id="refundBtn">Refund</button>
+                <button class="btn btn-outline-light btn-sm" id="openDrawerBtn" title="Open Cash Drawer">
+                    <i class="bi bi-box-arrow-up"></i>
+                </button>
+                <button class="btn btn-warning btn-sm fw-bold" id="adminMenuBtn">Admin</button>
+                <a href="https://labels.granvilletea.com" target="_blank" class="btn btn-outline-light btn-sm">Labels</a>
                 <a href="<?= baseUrl('transactions') ?>" class="btn btn-outline-light btn-sm">History</a>
-                <?php if (isManager()): ?>
-                    <a href="<?= baseUrl('reports/daily') ?>" class="btn btn-outline-light btn-sm">Reports</a>
-                <?php endif; ?>
-                <a href="<?= baseUrl('shift/close') ?>" class="btn btn-outline-warning btn-sm">Close Shift</a>
                 <a href="<?= baseUrl('switch-user') ?>" class="btn btn-outline-info btn-sm">Switch User</a>
-                <a href="<?= baseUrl('lock') ?>" class="btn btn-outline-secondary btn-sm">Lock</a>
                 <button class="btn btn-outline-light btn-sm" id="fullScreenToggle"></button>
                 <script>
                 (function(){
@@ -48,6 +51,19 @@ var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
                     update();
                 })();
                 </script>
+                <script>
+                document.getElementById('openDrawerBtn').addEventListener('click', function(){
+                    var btn = this;
+                    btn.disabled = true;
+                    fetch('<?= baseUrl("api/print/open-drawer") ?>', {method:'POST'})
+                        .then(function(r){ return r.json(); })
+                        .then(function(d){
+                            if(d.error) alert('Drawer error: ' + d.error);
+                        })
+                        .catch(function(){ alert('Failed to open drawer'); })
+                        .finally(function(){ btn.disabled = false; });
+                });
+                </script>
             </div>
         </div>
     </div>
@@ -55,15 +71,33 @@ var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
     <?php $flash = getFlash('error'); if ($flash): ?>
         <div class="alert alert-danger m-2 mb-0"><?= e($flash) ?></div>
     <?php endif; ?>
+    <?php $flash = getFlash('success'); if ($flash): ?>
+        <div class="alert alert-success m-2 mb-0"><?= e($flash) ?></div>
+    <?php endif; ?>
 
     <div class="pos-main">
         <!-- Left: Products -->
         <div class="pos-products">
             <!-- Parent Category Tabs -->
+            <?php
+            // Assign a unique color to each category button
+            $colorPalette = [
+                'cat-forest','cat-emerald','cat-teal','cat-cyan','cat-blue',
+                'cat-indigo','cat-purple','cat-violet','cat-rose','cat-red',
+                'cat-orange','cat-amber','cat-olive','cat-sage','cat-sea',
+                'cat-slate','cat-brown',
+            ];
+            $catColorMap = [];
+            $i = 0;
+            foreach ($categoryTree as $cat) {
+                $catColorMap[$cat['id']] = $colorPalette[$i % count($colorPalette)];
+                $i++;
+            }
+            ?>
             <div class="pos-categories" id="parentCategoryRow">
-                <button class="btn btn-primary category-btn parent-cat-btn active" data-category="" data-has-children="0">All</button>
+                <button class="btn category-btn parent-cat-btn cat-dark active" data-category="" data-has-children="0">All</button>
                 <?php foreach ($categoryTree as $cat): ?>
-                    <button class="btn btn-outline-primary category-btn parent-cat-btn"
+                    <button class="btn category-btn parent-cat-btn <?= $catColorMap[$cat['id']] ?>"
                             data-category="<?= $cat['id'] ?>"
                             data-has-children="<?= !empty($cat['children']) ? '1' : '0' ?>"><?= e($cat['name']) ?></button>
                 <?php endforeach; ?>
@@ -74,8 +108,8 @@ var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
 
             <!-- Search + PLU -->
             <div class="pos-search px-2 py-2 d-flex gap-2">
-                <input type="text" id="pluInput" class="form-control" style="max-width:130px; font-size:1.1rem; font-weight:bold; text-align:center"
-                       placeholder="PLU#" autocomplete="off" inputmode="numeric">
+                <button type="button" class="btn btn-outline-primary fw-bold" id="pluBtn" style="min-width:100px; font-size:1.1rem">PLU#</button>
+                <input type="hidden" id="pluInput">
                 <span id="pqw" class="flex-grow-1"></span>
             </div>
 
@@ -87,15 +121,14 @@ var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
                          data-parent-category="<?= $p['parent_category_id'] ?? '' ?>"
                          data-name="<?= e(strtolower($p['name'])) ?>"
                          data-code="<?= e(strtolower($p['product_code'] ?? '')) ?>"
-                         data-price="<?= (float)$p['unit_price'] ?>">
+                         data-price="<?= (float)$p['unit_price'] ?>"
+                         <?php if ($p['wholesale_only']): ?>data-wholesale-only="1" style="display:none"<?php endif; ?>>
+                        <?php if ($p['image']): ?>
                         <div class="pos-product-img">
-                            <?php if ($p['image']): ?>
-                                <img src="<?= baseUrl('public/uploads/pos/' . $p['image']) ?>"
-                                     alt="<?= e($p['name']) ?>" loading="lazy">
-                            <?php else: ?>
-                                <div class="pos-product-placeholder"><?= e(mb_substr($p['name'], 0, 2)) ?></div>
-                            <?php endif; ?>
+                            <img src="<?= baseUrl('public/uploads/pos/' . $p['image']) ?>"
+                                 alt="<?= e($p['name']) ?>" loading="lazy">
                         </div>
+                        <?php endif; ?>
                         <div class="pos-product-name"><?= e($p['name']) ?></div>
                         <div class="pos-product-price">$<?= number_format((float)$p['unit_price'], 2) ?></div>
                     </div>
@@ -111,10 +144,9 @@ var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
                     <span class="badge bg-secondary" id="cartCount"><?= count($cartTotals['items']) ?></span>
                 </div>
                 <div class="d-flex align-items-center gap-1">
-                    <button class="btn btn-sm <?= $cartDiscount ? 'btn-teal' : 'btn-outline-teal' ?>"
-                            id="discountToggle" title="Toggle 10% discount"
-                            <?= $wholesale ? 'disabled' : '' ?>>
-                        10% OFF<?php if ($cartDiscount): ?> <span class="badge bg-light text-teal">-10%</span><?php endif; ?>
+                    <button class="btn btn-sm <?= !empty($cartDiscount) ? 'btn-teal' : 'btn-outline-teal' ?>"
+                            id="discountToggle" title="Toggle 10% discount">
+                        10% OFF<?php if (!empty($cartDiscount)): ?> <span class="badge bg-light text-teal">-10%</span><?php endif; ?>
                     </button>
                     <button class="btn btn-sm <?= $wholesale ? 'btn-purple' : 'btn-outline-purple' ?>"
                             id="wholesaleToggle" title="Toggle 25% wholesale discount">
@@ -186,7 +218,16 @@ var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
             </div>
 
             <div class="pos-cart-actions">
+                <button class="btn btn-outline-info btn-lg flex-fill" id="subtotalBtn">SUBTOTAL</button>
                 <button class="btn btn-outline-danger btn-lg flex-fill" id="clearCartBtn">CLEAR</button>
+                <button class="btn btn-warning btn-lg flex-fill position-relative" id="holdBtn">
+                    HOLD
+                    <?php if ($heldOrderCount > 0): ?>
+                        <span class="badge bg-danger position-absolute top-0 start-100 translate-middle rounded-pill" id="holdBadge"><?= $heldOrderCount ?></span>
+                    <?php else: ?>
+                        <span class="badge bg-danger position-absolute top-0 start-100 translate-middle rounded-pill" id="holdBadge" style="display:none"></span>
+                    <?php endif; ?>
+                </button>
                 <button class="btn btn-success btn-lg flex-fill" id="payBtn"
                         <?= empty($cartTotals['items']) ? 'disabled' : '' ?>>PAY</button>
             </div>
@@ -248,6 +289,7 @@ var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
                                 <button class="btn btn-outline-primary btn-lg add-payment-btn" data-method="card">Card</button>
                                 <button class="btn btn-outline-warning btn-lg add-payment-btn" data-method="gift_card">Gift Card</button>
                                 <button class="btn btn-outline-info btn-lg add-payment-btn" data-method="web_gift_card">Web GC</button>
+                                <button class="btn btn-outline-secondary btn-lg add-payment-btn" data-method="usd_cash">USD Cash</button>
                             </div>
                         </div>
                     </div>
@@ -266,6 +308,20 @@ var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
                             </div>
                         </div>
 
+                        <!-- Card amount panel -->
+                        <div id="cardAmountPanel" style="display:none">
+                            <label class="form-label fw-bold">Card Amount</label>
+                            <div class="d-flex gap-2 flex-wrap mb-3">
+                                <button class="btn btn-primary btn-lg" id="cardExactBtn">Exact</button>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Custom Amount</label>
+                                <input type="number" class="form-control form-control-lg" id="customCardAmount"
+                                       step="0.01" min="0" placeholder="0.00">
+                                <button class="btn btn-primary mt-2" id="applyCustomCard">Apply</button>
+                            </div>
+                        </div>
+
                         <!-- Gift card lookup -->
                         <div id="giftCardPanel" style="display:none">
                             <label class="form-label fw-bold">Web Gift Card Code</label>
@@ -276,10 +332,40 @@ var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
                             <div id="gcResult"></div>
                         </div>
 
+                        <!-- USD Cash panel -->
+                        <div id="usdCashPanel" style="display:none">
+                            <label class="form-label fw-bold">USD Cash Payment</label>
+                            <div class="alert alert-secondary py-2 mb-2" id="usdRateInfo">
+                                Loading rate...
+                            </div>
+                            <div class="mb-2">
+                                <small class="text-muted">Amount due: <strong id="usdAmountDue">--</strong></small>
+                            </div>
+                            <div class="d-flex gap-2 flex-wrap mb-3" id="usdDenomBtns">
+                                <!-- Populated by JS -->
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Custom USD Amount</label>
+                                <input type="number" class="form-control form-control-lg" id="customUsdAmount"
+                                       step="0.01" min="0" placeholder="0.00">
+                                <button class="btn btn-secondary mt-2" id="applyCustomUsd">Apply</button>
+                            </div>
+                        </div>
+
                         <div id="changeDisplay" class="mt-3" style="display:none">
                             <div class="alert alert-success fs-3 text-center">
                                 Change: <strong id="changeAmount">$0.00</strong>
                             </div>
+                        </div>
+
+                        <!-- Moneris processing panel -->
+                        <div id="monerisPanel" style="display:none">
+                            <div id="monerisProcessing" class="text-center py-4" style="display:none">
+                                <div class="spinner-border text-primary mb-3" style="width:3rem;height:3rem"></div>
+                                <h5>Processing on Terminal...</h5>
+                                <p class="text-muted">Customer is interacting with the card reader.<br>Please wait.</p>
+                            </div>
+                            <div id="monerisResult" style="display:none"></div>
                         </div>
                     </div>
                 </div>
@@ -422,6 +508,186 @@ var POS_PRINT_URL = <?= json_encode($terminalPrintUrl) ?>;
                     <button class="btn btn-light pin-keypad-btn" data-key="0">0</button>
                 </div>
                 <button class="btn btn-primary w-100 btn-lg mt-2" id="verifyPinBtn">Verify</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Admin Menu Modal -->
+<div class="modal fade" id="adminMenuModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title fw-bold">Admin Menu</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <span class="badge bg-success mb-3" id="adminAuthBadge"></span>
+                <div class="d-grid gap-3">
+                    <button class="btn btn-danger btn-lg py-3 fs-5" id="adminRefundBtn">
+                        Standalone Refund
+                    </button>
+                    <a href="<?= baseUrl('reports/daily') ?>" class="btn btn-primary btn-lg py-3 fs-5">
+                        Reports
+                    </a>
+                    <button class="btn btn-info btn-lg py-3 fs-5 text-white" id="adminPettyCashBtn">
+                        Petty Cash
+                    </button>
+                    <button class="btn btn-purple btn-lg py-3 fs-5 text-white" id="adminGiftCardSaleBtn">
+                        Gift Card Sale
+                    </button>
+                    <?php if (isManager()): ?>
+                    <a href="<?= baseUrl('products') ?>" class="btn btn-outline-dark btn-lg py-3 fs-5">
+                        Products &amp; Pricing
+                    </a>
+                    <?php endif; ?>
+                    <a href="<?= baseUrl('lock') ?>" class="btn btn-secondary btn-lg py-3 fs-5">
+                        Lock Screen
+                    </a>
+                    <a href="<?= baseUrl('dayclose') ?>" class="btn btn-warning btn-lg py-3 fs-5">
+                        Close Registers
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Petty Cash Modal -->
+<div class="modal fade" id="pettyCashModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title">Petty Cash</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-5">
+                        <h6 class="fw-bold">Record Expenditure</h6>
+                        <div class="mb-3">
+                            <label class="form-label">Amount ($)</label>
+                            <input type="number" class="form-control form-control-lg" id="pettyCashAmount"
+                                   step="0.01" min="0.01" placeholder="0.00" inputmode="decimal">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            <input type="text" class="form-control" id="pettyCashDescription"
+                                   placeholder="e.g. Milk for shop" maxlength="255" autocomplete="off">
+                        </div>
+                        <button class="btn btn-info text-white w-100 btn-lg" id="addPettyCashBtn">Add Entry</button>
+                    </div>
+                    <div class="col-md-7">
+                        <h6 class="fw-bold">This Shift</h6>
+                        <div class="alert alert-secondary py-2 text-center">
+                            Running Total: <strong id="pettyCashRunningTotal">$0.00</strong>
+                        </div>
+                        <div id="pettyCashList" style="max-height:300px; overflow-y:auto">
+                            <p class="text-muted" id="pettyCashEmpty">No entries yet.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Gift Card Sale Modal -->
+<div class="modal fade" id="giftCardSaleModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-purple text-white">
+                <h5 class="modal-title">Gift Card Sale</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-5">
+                        <h6 class="fw-bold">Record Gift Card Sale</h6>
+                        <div class="mb-3">
+                            <label class="form-label">Amount ($)</label>
+                            <input type="number" class="form-control form-control-lg" id="gcSaleAmount"
+                                   step="0.01" min="0.01" placeholder="0.00" inputmode="decimal">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Payment Method</label>
+                            <div class="btn-group w-100" role="group">
+                                <input type="radio" class="btn-check" name="gcSaleMethod" id="gcSaleCard" value="card" checked>
+                                <label class="btn btn-outline-primary btn-lg" for="gcSaleCard">Card</label>
+                                <input type="radio" class="btn-check" name="gcSaleMethod" id="gcSaleCash" value="cash">
+                                <label class="btn btn-outline-success btn-lg" for="gcSaleCash">Cash</label>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Notes <small class="text-muted">(optional)</small></label>
+                            <input type="text" class="form-control" id="gcSaleNotes"
+                                   placeholder="e.g. Customer name" maxlength="255" autocomplete="off">
+                        </div>
+                        <button class="btn btn-purple text-white w-100 btn-lg" id="addGiftCardSaleBtn">Add Entry</button>
+                    </div>
+                    <div class="col-md-7">
+                        <h6 class="fw-bold">This Shift</h6>
+                        <div class="alert alert-secondary py-2 text-center">
+                            Running Total: <strong id="gcSaleRunningTotal">$0.00</strong>
+                            <span class="text-muted small ms-2">
+                                (Card: <span id="gcSaleCardTotal">$0.00</span> | Cash: <span id="gcSaleCashTotal">$0.00</span>)
+                            </span>
+                        </div>
+                        <div id="gcSaleList" style="max-height:300px; overflow-y:auto">
+                            <p class="text-muted" id="gcSaleEmpty">No entries yet.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Held Orders Modal -->
+<div class="modal fade" id="heldOrdersModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title fw-bold">Held Orders</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="heldOrdersList">
+                    <p class="text-muted text-center" id="heldOrdersEmpty">No held orders.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- PLU Keypad Modal -->
+<div class="modal fade" id="pluKeypadModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white py-2">
+                <h5 class="modal-title">Enter PLU Code</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-2">
+                <div class="text-center mb-2">
+                    <div id="pluKeypadDisplay" class="fs-1 fw-bold font-monospace py-2" style="min-height:50px">_</div>
+                </div>
+                <div class="qty-keypad-grid">
+                    <button class="btn btn-light plu-key" data-key="7">7</button>
+                    <button class="btn btn-light plu-key" data-key="8">8</button>
+                    <button class="btn btn-light plu-key" data-key="9">9</button>
+                    <button class="btn btn-outline-danger plu-key" data-key="backspace">&#9003;</button>
+                    <button class="btn btn-light plu-key" data-key="4">4</button>
+                    <button class="btn btn-light plu-key" data-key="5">5</button>
+                    <button class="btn btn-light plu-key" data-key="6">6</button>
+                    <button class="btn btn-outline-secondary plu-key" data-key="clear">C</button>
+                    <button class="btn btn-light plu-key" data-key="1">1</button>
+                    <button class="btn btn-light plu-key" data-key="2">2</button>
+                    <button class="btn btn-light plu-key" data-key="3">3</button>
+                    <button class="btn btn-success text-white plu-key" data-key="enter" style="grid-row: span 2;">GO</button>
+                    <button class="btn btn-light plu-key" data-key="0" style="grid-column: span 2;">0</button>
+                    <button class="btn btn-light plu-key" data-key=".">.</button>
+                </div>
             </div>
         </div>
     </div>

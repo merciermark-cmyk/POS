@@ -10,7 +10,7 @@ ob_start();
 
 <table class="table table-striped">
     <thead>
-        <tr><th>Username</th><th>Role</th><th>PIN</th><th>Status</th><th>Actions</th></tr>
+        <tr><th>Username</th><th>Role</th><th>PIN</th><th>Schedule</th><th>Status</th><th>Actions</th></tr>
     </thead>
     <tbody>
         <?php foreach ($users as $u): ?>
@@ -18,6 +18,7 @@ ob_start();
                 <td><?= e($u['username']) ?></td>
                 <td><span class="badge bg-<?= $u['role'] === 'manager' ? 'primary' : 'secondary' ?>"><?= e($u['role']) ?></span></td>
                 <td><?= $u['pin'] ? '****' : '—' ?></td>
+                <td><?= !empty($u['schedule_user_id']) && isset($schedMap[$u['schedule_user_id']]) ? e($schedMap[$u['schedule_user_id']]) : '—' ?></td>
                 <td>
                     <span class="badge bg-<?= $u['is_active'] ? 'success' : 'danger' ?>">
                         <?= $u['is_active'] ? 'Active' : 'Inactive' ?>

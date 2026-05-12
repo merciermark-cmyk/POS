@@ -102,6 +102,12 @@ class ImageController {
     }
 
     private function resizeImage(string $source, string $dest, int $maxW, int $maxH, string $mime): void {
+        // Detect actual image type from file contents (don't trust browser MIME)
+        $info = getimagesize($source);
+        if ($info) {
+            $mime = $info['mime'];
+        }
+
         $img = match ($mime) {
             'image/jpeg' => imagecreatefromjpeg($source),
             'image/png'  => imagecreatefrompng($source),

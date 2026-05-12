@@ -7,8 +7,10 @@ class TransactionController {
         $dateFrom     = $_GET['date_from'] ?? date('Y-m-d');
         $dateTo       = $_GET['date_to']   ?? date('Y-m-d');
         $customerName = trim($_GET['customer_name'] ?? '');
+        $terminalId   = !empty($_GET['terminal_id']) ? (int)$_GET['terminal_id'] : null;
+        $terminals    = (new Terminal())->getAll();
 
-        $transactions = (new Transaction())->getRecent(200, $dateFrom, $dateTo, null, $customerName);
+        $transactions = (new Transaction())->getRecent(200, $dateFrom, $dateTo, $terminalId, $customerName);
 
         require APP_PATH . '/views/transactions/list.php';
     }
@@ -58,6 +60,29 @@ class TransactionController {
 
         try {
             (new Transaction())->void($id, $user['id'], $reason, $locationId, $customerName);
+
+            // Also void any linked Moneris transactions
+            $monerisModel = new Moneris();
+            $monerisPayments = $monerisModel->findByPosTransaction($id);
+            $monerisTerminalId = null;
+            $terminalId = $_SESSION['pos_terminal_id'] ?? null;
+            if ($terminalId) {
+                $terminal = (new Terminal())->findById($terminalId);
+                $monerisTerminalId = $terminal['moneris_terminal_id'] ?? null;
+            }
+
+            foreach ($monerisPayments as $mPay) {
+                if ($mPay['action'] === 'purchase' && $mPay['status_code'] === '5207') {
+                    $tid = $monerisTerminalId ?: $mPay['terminal_id'];
+                    $voidResult = $monerisModel->void($tid, $mPay['order_id'], $user['username'] ?? 'manager');
+                    if (!$voidResult['success']) {
+                        setFlash('error', 'Transaction voided but Moneris void failed: ' . ($voidResult['error'] ?? 'Unknown error') . '. Contact Moneris to reverse the charge.');
+                        redirect('/transactions/view/' . $id);
+                        return;
+                    }
+                }
+            }
+
             setFlash('success', 'Transaction #' . $id . ' voided.');
         } catch (Exception $e) {
             setFlash('error', 'Void failed: ' . $e->getMessage());
@@ -164,6 +189,53 @@ class TransactionController {
             setFlash('error', 'Refund failed: ' . $e->getMessage());
             redirect('/transactions/view/' . $txnId);
         }
+    }
+
+    public function changePayment(): void {
+        requireAuth();
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            redirect('/transactions');
+            return;
+        }
+
+        verifyCsrfToken();
+
+        $paymentId = (int)($_POST['payment_id'] ?? 0);
+        $newMethod = $_POST['new_method'] ?? '';
+        $txnId     = (int)($_POST['transaction_id'] ?? 0);
+
+        $allowed = ['cash', 'card', 'gift_card', 'web_gift_card'];
+        if (!in_array($newMethod, $allowed)) {
+            setFlash('error', 'Invalid payment method.');
+            redirect('/transactions/view/' . $txnId);
+            return;
+        }
+
+        $db = getDB();
+        $stmt = $db->prepare('SELECT p.*, t.status FROM pos_payments p JOIN pos_transactions t ON t.id = p.transaction_id WHERE p.id = ?');
+        $stmt->execute([$paymentId]);
+        $payment = $stmt->fetch();
+
+        if (!$payment || !in_array($payment['status'], ['completed', 'partial_refund'])) {
+            setFlash('error', 'Payment not found or transaction cannot be edited.');
+            redirect('/transactions/view/' . $txnId);
+            return;
+        }
+
+        if ($payment['method'] === $newMethod) {
+            setFlash('info', 'Payment method unchanged.');
+            redirect('/transactions/view/' . $txnId);
+            return;
+        }
+
+        // Clear reference when changing method (e.g. card last-4 no longer relevant)
+        $ref = ($newMethod === 'card') ? $payment['reference'] : null;
+        $stmt = $db->prepare('UPDATE pos_payments SET method = ?, reference = ? WHERE id = ?');
+        $stmt->execute([$newMethod, $ref, $paymentId]);
+
+        setFlash('success', 'Payment method changed to ' . ucfirst(str_replace('_', ' ', $newMethod)) . '.');
+        redirect('/transactions/view/' . $txnId);
     }
 
     public function refundReceipt(): void {

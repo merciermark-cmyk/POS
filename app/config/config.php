@@ -24,7 +24,7 @@ function loadEnv(string $path): void {
 loadEnv(dirname(__DIR__, 2) . '/.env');
 
 // --- Timezone ---
-date_default_timezone_set('Etc/GMT+7');
+date_default_timezone_set('America/Vancouver');
 
 // --- Paths ---
 define('BASE_PATH',    dirname(__DIR__, 2));
@@ -54,18 +54,23 @@ define('TAX_PST_RATE', 0.07); // 7% PST
 // --- PrestaShop (gift card cross-DB) ---
 define('PS_DB_NAME',   getenv('PS_DB_NAME') ?: '');
 define('PS_DB_PREFIX', getenv('PS_DB_PREFIX') ?: 'ps_');
+define('PS_SHIPPED_STATE_ID', (int)(getenv('PS_SHIPPED_STATE_ID') ?: 4));
+define('PS_GIFT_CARD_CATEGORY_ID', (int)(getenv('PS_GIFT_CARD_CATEGORY_ID') ?: 63));
 
 // --- Beverage modifiers ---
 define('BEVERAGE_CATEGORY_NAME', 'Beverages');
+
+// --- Transaction search ---
+define('SEARCH_DEFAULT_TOLERANCE', 10.00);
 
 // --- Print service ---
 define('PRINT_SERVICE_URL', 'http://localhost:5000');
 
 // --- Report category groups ---
+// Category sales query rolls up to PARENT category via COALESCE(pc.name, c.name).
+// So values here should be the top-level parent category names that the query will return.
 define('REPORT_CATEGORY_GROUPS', [
-    'Loose Tea'   => ['Black Tea blends','Decaf Tea','Flavoured Black Tea','Flavoured Green Tea',
-                       'Green Tea','Herbal Tea','Mate','Oolong Tea','Pu erh Tea',
-                       'Rooibos Tea','Single Estate Black Tea','Tea Boxes','Tisane','White Tea'],
+    'Loose Tea'   => ['Loose Tea'],
     'Accessories' => ['Accessories'],
     'Wholesale'   => ['Wholesale'],
     'Beverages'   => ['Beverages'],

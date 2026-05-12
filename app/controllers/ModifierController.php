@@ -10,15 +10,16 @@ class ModifierController {
     public function create(): void {
         requireManager();
         $errors   = [];
-        $modifier = ['name' => '', 'price' => '', 'sort_order' => 0, 'is_active' => 1];
+        $modifier = ['name' => '', 'price' => '', 'sort_order' => 0, 'is_active' => 1, 'modifier_group' => 'beverage'];
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             verifyCsrfToken();
             $data = [
-                'name'       => trim($_POST['name'] ?? ''),
-                'price'      => $_POST['price'] ?? '',
-                'sort_order' => (int)($_POST['sort_order'] ?? 0),
-                'is_active'  => isset($_POST['is_active']) ? 1 : 0,
+                'name'           => trim($_POST['name'] ?? ''),
+                'price'          => $_POST['price'] ?? '',
+                'sort_order'     => (int)($_POST['sort_order'] ?? 0),
+                'is_active'      => isset($_POST['is_active']) ? 1 : 0,
+                'modifier_group' => $_POST['modifier_group'] ?? 'beverage',
             ];
             $modifier = $data;
 
@@ -57,10 +58,11 @@ class ModifierController {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             verifyCsrfToken();
             $data = [
-                'name'       => trim($_POST['name'] ?? ''),
-                'price'      => $_POST['price'] ?? '',
-                'sort_order' => (int)($_POST['sort_order'] ?? 0),
-                'is_active'  => isset($_POST['is_active']) ? 1 : 0,
+                'name'           => trim($_POST['name'] ?? ''),
+                'price'          => $_POST['price'] ?? '',
+                'sort_order'     => (int)($_POST['sort_order'] ?? 0),
+                'is_active'      => isset($_POST['is_active']) ? 1 : 0,
+                'modifier_group' => $_POST['modifier_group'] ?? 'beverage',
             ];
 
             if (strlen($data['name']) < 1) $errors[] = 'Name is required.';

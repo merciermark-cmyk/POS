@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Label Printer (Preview)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        * { -webkit-tap-highlight-color: transparent; }
+        html, body { height: 100%; overflow: hidden; }
+        body { background: #f8f9fa; display: flex; flex-direction: column; }
+
+        .search-bar {
+            position: sticky; top: 0; z-index: 10;
+            background: #f8f9fa; padding: 12px 16px 8px;
+        }
+        .search-bar input {
+            font-size: 16px;
+            padding: 14px 16px;
+            border-radius: 12px;
+        }
+
+        .product-area {
+            flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+            padding: 0 16px 16px;
+        }
+
+        .category-header {
+            font-size: 0.85rem; font-weight: 700; color: #6c757d;
+            text-transform: uppercase; letter-spacing: 0.5px;
+            padding: 12px 4px 6px; position: sticky; top: 0;
+            background: #f8f9fa; z-index: 2;
+        }
+
+        .product-item {
+            display: flex; align-items: center; justify-content: space-between;
+            min-height: 56px; padding: 12px 16px;
+            background: #fff; border-radius: 10px; margin-bottom: 6px;
+            cursor: pointer; transition: background 0.1s, box-shadow 0.1s;
+            border: 2px solid transparent;
+            -webkit-user-select: none; user-select: none;
+        }
+        .product-item:active { background: #e3f2fd; }
+        .product-item.selected { border-color: #0d6efd; background: #e7f1ff; }
+        .product-item .p-name { font-weight: 600; font-size: 1.05rem; }
+        .product-item .p-meta { font-size: 0.82rem; color: #6c757d; margin-top: 2px; }
+
+        .empty-msg { text-align: center; color: #adb5bd; padding: 48px 16px; font-size: 1.1rem; }
+
+        .print-panel {
+            position: sticky; bottom: 0; z-index: 20;
+            background: #fff; border-top: 1px solid #dee2e6;
+            padding: 12px 16px; box-shadow: 0 -2px 12px rgba(0,0,0,0.08);
+            transform: translateY(100%); transition: transform 0.25s ease;
+        }
+        .print-panel.visible { transform: translateY(0); }
+
+        .preview-row {
+            display: flex; align-items: center; gap: 12px;
+            margin-bottom: 10px;
+        }
+        .preview-info { flex: 1; min-width: 0; }
+        .preview-info .pv-name { font-weight: 700; font-size: 1.05rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .preview-info .pv-detail { font-size: 0.82rem; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .btn-print {
+            width: 100%; min-height: 56px; font-size: 1.2rem; font-weight: 700;
+            border-radius: 12px;
+        }
+
+        #printStatus .alert { margin: 8px 0 0; padding: 10px 16px; border-radius: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="search-bar">
+    <input type="search" class="form-control form-control-lg" id="searchInput"
+           placeholder="Search loose teas..." autocomplete="off" autofocus>
+</div>
+
+<div class="product-area" id="productArea">
+    <div class="empty-msg">Loading products...</div>
+</div>
+
+<div class="print-panel" id="printPanel">
+    <div class="preview-row">
+        <div class="preview-info">
+            <div class="pv-name" id="pvName"></div>
+            <div class="pv-detail" id="pvDetail"></div>
+        </div>
+    </div>
+    <button class="btn btn-success btn-print" id="printBtn">Print Label</button>
+    <div id="printStatus"></div>
+</div>
+
+<script>
+const SAMPLE_PRODUCTS = [
+    { id: 1, name: "Afternoon Tea Blend", product_code: "BT-001", brewing_instructions: "1 tsp / 200ml / 95\u00B0C / 3-5 min", category: "Black Tea blends" },
+    { id: 2, name: "Breakfast Tea Blend", product_code: "BT-002", brewing_instructions: "1 tsp / 200ml / 100\u00B0C / 3-5 min", category: "Black Tea blends" },
+    { id: 3, name: "Earl Grey Blend", product_code: "BT-003", brewing_instructions: "1 tsp / 200ml / 95\u00B0C / 3-4 min", category: "Black Tea blends" },
+    { id: 4, name: "Irish Breakfast", product_code: "BT-004", brewing_instructions: "1 tsp / 200ml / 100\u00B0C / 3-5 min", category: "Black Tea blends" },
+    { id: 5, name: "Decaf English Breakfast", product_code: "DC-001", brewing_instructions: "1 tsp / 200ml / 100\u00B0C / 3-5 min", category: "Decaf Tea" },
+    { id: 6, name: "Decaf Earl Grey", product_code: "DC-002", brewing_instructions: "1 tsp / 200ml / 95\u00B0C / 3-4 min", category: "Decaf Tea" },
+    { id: 7, name: "Vanilla Black Tea", product_code: "FB-001", brewing_instructions: "1 tsp / 200ml / 95\u00B0C / 3-5 min", category: "Flavoured Black Tea" },
+    { id: 8, name: "Earl Grey Lavender", product_code: "FB-002", brewing_instructions: "1 tsp / 200ml / 95\u00B0C / 3-4 min", category: "Flavoured Black Tea" },
+    { id: 9, name: "Caramel Black Tea", product_code: "FB-003", brewing_instructions: "1 tsp / 200ml / 95\u00B0C / 3-5 min", category: "Flavoured Black Tea" },
+    { id: 10, name: "Rose Black Tea", product_code: "FB-004", brewing_instructions: "1 tsp / 200ml / 95\u00B0C / 3-5 min", category: "Flavoured Black Tea" },
+    { id: 11, name: "Jasmine Green Tea", product_code: "FG-001", brewing_instructions: "1 tsp / 200ml / 80\u00B0C / 2-3 min", category: "Flavoured Green Tea" },
+    { id: 12, name: "Mango Green Tea", product_code: "FG-002", brewing_instructions: "1 tsp / 200ml / 80\u00B0C / 2-3 min", category: "Flavoured Green Tea" },
+    { id: 13, name: "Mint Green Tea", product_code: "FG-003", brewing_instructions: "1 tsp / 200ml / 80\u00B0C / 2-3 min", category: "Flavoured Green Tea" },
+    { id: 14, name: "Dragon Well", product_code: "GT-001", brewing_instructions: "1 tsp / 200ml / 80\u00B0C / 2-3 min", category: "Green Tea" },
+    { id: 15, name: "Gunpowder Green", product_code: "GT-002", brewing_instructions: "1 tsp / 200ml / 80\u00B0C / 2-3 min", category: "Green Tea" },
+    { id: 16, name: "Sencha", product_code: "GT-003", brewing_instructions: "1 tsp / 200ml / 75\u00B0C / 1-2 min", category: "Green Tea" },
+    { id: 17, name: "Chamomile Flowers", product_code: "HT-001", brewing_instructions: "1 tsp / 200ml / 100\u00B0C / 5-7 min", category: "Herbal Tea" },
+    { id: 18, name: "Peppermint Leaves", product_code: "HT-002", brewing_instructions: "1 tsp / 200ml / 100\u00B0C / 5-7 min", category: "Herbal Tea" },
+    { id: 19, name: "Lemon Ginger", product_code: "HT-003", brewing_instructions: "1 tsp / 200ml / 100\u00B0C / 5-7 min", category: "Herbal Tea" },
+    { id: 20, name: "Yerba Mate Traditional", product_code: "MA-001", brewing_instructions: "1 tsp / 200ml / 80\u00B0C / 3-5 min", category: "Mate" },
+    { id: 21, name: "Ti Kwan Yin", product_code: "OL-001", brewing_instructions: "1 tsp / 150ml / 90\u00B0C / 3-5 min", category: "Oolong Tea" },
+    { id: 22, name: "Da Hong Pao", product_code: "OL-002", brewing_instructions: "1 tsp / 150ml / 95\u00B0C / 3-5 min", category: "Oolong Tea" },
+    { id: 23, name: "Milk Oolong", product_code: "OL-003", brewing_instructions: "1 tsp / 150ml / 90\u00B0C / 3-5 min", category: "Oolong Tea" },
+    { id: 24, name: "Pu erh Imperial", product_code: "PU-001", brewing_instructions: "1 tsp / 150ml / 100\u00B0C / 3-5 min", category: "Pu erh Tea" },
+    { id: 25, name: "Rooibos Natural", product_code: "RT-001", brewing_instructions: "1 tsp / 200ml / 100\u00B0C / 5-7 min", category: "Rooibos Tea" },
+    { id: 26, name: "Rooibos Vanilla", product_code: "RT-002", brewing_instructions: "1 tsp / 200ml / 100\u00B0C / 5-7 min", category: "Rooibos Tea" },
+    { id: 27, name: "Assam TGFOP", product_code: "SE-001", brewing_instructions: "1 tsp / 200ml / 100\u00B0C / 3-5 min", category: "Single Estate Black Tea" },
+    { id: 28, name: "Darjeeling First Flush", product_code: "SE-002", brewing_instructions: "1 tsp / 200ml / 95\u00B0C / 3-4 min", category: "Single Estate Black Tea" },
+    { id: 29, name: "Lemongrass Tisane", product_code: "TI-001", brewing_instructions: "1 tsp / 200ml / 100\u00B0C / 5-7 min", category: "Tisane" },
+    { id: 30, name: "Silver Needle", product_code: "WT-001", brewing_instructions: "1 tsp / 200ml / 80\u00B0C / 4-6 min", category: "White Tea" },
+    { id: 31, name: "White Peony", product_code: "WT-002", brewing_instructions: "1 tsp / 200ml / 80\u00B0C / 4-6 min", category: "White Tea" },
+];
+
+let allProducts = SAMPLE_PRODUCTS;
+let selectedProduct = null;
+
+function filtered() {
+    const q = document.getElementById('searchInput').value.trim().toLowerCase();
+    if (!q) return SAMPLE_PRODUCTS;
+    return SAMPLE_PRODUCTS.filter(p =>
+        p.name.toLowerCase().includes(q) || (p.product_code && p.product_code.toLowerCase().includes(q))
+    );
+}
+
+function renderProducts(products) {
+    const area = document.getElementById('productArea');
+    if (!products.length) {
+        area.innerHTML = '<div class="empty-msg">No products found</div>';
+        return;
+    }
+    let html = '';
+    let currentCat = null;
+    for (const p of products) {
+        if (p.category !== currentCat) {
+            currentCat = p.category;
+            html += '<div class="category-header">' + esc(currentCat) + '</div>';
+        }
+        const sel = selectedProduct && selectedProduct.id === p.id ? ' selected' : '';
+        html += '<div class="product-item' + sel + '" onclick="selectProduct(' + p.id + ')">' +
+            '<div>' +
+            '<div class="p-name">' + esc(p.name) + '</div>' +
+            '<div class="p-meta">' + esc(p.product_code || '') + '</div>' +
+            '</div></div>';
+    }
+    area.innerHTML = html;
+}
+
+function selectProduct(id) {
+    selectedProduct = allProducts.find(p => p.id === id) || null;
+    renderProducts(allProducts);
+    const panel = document.getElementById('printPanel');
+    if (selectedProduct) {
+        document.getElementById('pvName').textContent = selectedProduct.name;
+        const parts = [];
+        if (selectedProduct.product_code) parts.push('PLU: ' + selectedProduct.product_code);
+        if (selectedProduct.brewing_instructions) parts.push(selectedProduct.brewing_instructions);
+        document.getElementById('pvDetail').textContent = parts.join(' \u2014 ');
+        panel.classList.add('visible');
+    } else {
+        panel.classList.remove('visible');
+    }
+    document.getElementById('printStatus').innerHTML = '';
+}
+
+document.getElementById('printBtn').addEventListener('click', function() {
+    if (!selectedProduct) return;
+    document.getElementById('printStatus').innerHTML =
+        '<div class="alert alert-success py-2 mb-0">Label printed! (preview mode)</div>';
+    setTimeout(() => document.getElementById('printStatus').innerHTML = '', 3000);
+});
+
+let searchTimer;
+document.getElementById('searchInput').addEventListener('input', function() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+        allProducts = filtered();
+        renderProducts(allProducts);
+    }, 300);
+});
+
+function esc(str) {
+    if (!str) return '';
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+}
+
+renderProducts(SAMPLE_PRODUCTS);
+</script>
+</body>
+</html>

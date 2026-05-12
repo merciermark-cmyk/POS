@@ -25,19 +25,18 @@ class PosUser extends BaseModel {
 
     public function getActive(): array {
         return $this->findAll(
-            'SELECT id, username, role, staff_code FROM pos_users WHERE is_active = 1 ORDER BY username'
+            'SELECT id, username, role, pin FROM pos_users WHERE is_active = 1 ORDER BY username'
         );
     }
 
     public function create(array $data): int {
         return (int)$this->insert(
-            'INSERT INTO pos_users (username, password_hash, pin, staff_code, role, is_active)
-             VALUES (?, ?, ?, ?, ?, ?)',
+            'INSERT INTO pos_users (username, password_hash, pin, role, is_active)
+             VALUES (?, ?, ?, ?, ?)',
             [
                 $data['username'],
                 password_hash($data['password'], PASSWORD_DEFAULT),
                 $data['pin'] ?: null,
-                $data['staff_code'] ?: null,
                 $data['role'] ?? ROLE_CASHIER,
                 $data['is_active'] ?? 1,
             ]
@@ -64,13 +63,13 @@ class PosUser extends BaseModel {
             $fields[] = 'role = ?';
             $params[] = $data['role'];
         }
-        if (array_key_exists('staff_code', $data)) {
-            $fields[] = 'staff_code = ?';
-            $params[] = $data['staff_code'] ?: null;
-        }
         if (isset($data['is_active'])) {
             $fields[] = 'is_active = ?';
             $params[] = (int)$data['is_active'];
+        }
+        if (array_key_exists('schedule_user_id', $data)) {
+            $fields[] = 'schedule_user_id = ?';
+            $params[] = $data['schedule_user_id'] ?: null;
         }
 
         if ($fields) {
@@ -90,10 +89,17 @@ class PosUser extends BaseModel {
         return password_verify($password, $user['password_hash']);
     }
 
-    public function verifyStaffCode(int $userId, string $code): bool {
+    public function findManagerByPin(string $pin): ?array {
+        return $this->findOne(
+            'SELECT id, username, role FROM pos_users WHERE pin = ? AND role = ? AND is_active = 1',
+            [$pin, ROLE_MANAGER]
+        );
+    }
+
+    public function verifyPin(int $userId, string $pin): bool {
         $user = $this->findById($userId);
         if (!$user) return false;
-        if (empty($user['staff_code'])) return true; // no code set — allow through
-        return $user['staff_code'] === $code;
+        if (empty($user['pin'])) return true; // no pin set — allow through
+        return $user['pin'] === $pin;
     }
 }

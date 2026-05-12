@@ -62,16 +62,30 @@ ob_start();
                 <h6>Payments</h6>
                 <?php foreach ($payments as $pay): ?>
                     <div class="d-flex justify-content-between">
-                        <span><?= e(ucfirst(str_replace('_', ' ', $pay['method']))) ?></span>
+                        <span>
+                            <?= e(ucfirst(str_replace('_', ' ', $pay['method']))) ?>
+                            <?php if (!empty($pay['reference'])): ?>
+                                <small class="text-muted">(<?= e($pay['reference']) ?>)</small>
+                            <?php endif; ?>
+                        </span>
                         <span>$<?= number_format($pay['amount'], 2) ?></span>
                     </div>
                 <?php endforeach; ?>
 
-                <div class="receipt-countdown text-center mt-3 mb-3" id="receiptCountdown">
+                <?php if ($autoPrint): ?>
+                <div id="receiptPrompt" class="mt-3 mb-3">
+                    <div class="d-flex gap-2 justify-content-center">
+                        <button class="btn btn-success btn-lg" id="btnPrintReceipt" onclick="doPrintAndContinue()">Print Receipt</button>
+                        <button class="btn btn-outline-secondary btn-lg" id="btnNoReceipt" onclick="doSkipAndContinue()">No Receipt</button>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+                <div class="receipt-countdown text-center mt-3 mb-3" id="receiptCountdown" <?php if ($autoPrint): ?>style="display:none"<?php endif; ?>>
                     Returning to staff picker in <span id="countdownNum"><?= RECEIPT_REDIRECT_SECONDS ?></span>...
                 </div>
 
-                <div class="mt-2 d-flex gap-2 justify-content-center">
+                <div class="mt-2 d-flex gap-2 justify-content-center" id="receiptNav" <?php if ($autoPrint): ?>style="display:none"<?php endif; ?>>
                     <form method="post" action="<?= baseUrl('next-customer') ?>" style="display:inline">
                         <?= csrfField() ?>
                         <button type="submit" class="btn btn-success btn-lg">Next Customer</button>
@@ -85,6 +99,7 @@ ob_start();
 </div>
 
 <script>
+var _printUrl = <?= json_encode(rtrim($terminalPrintUrl ?? PRINT_SERVICE_URL, '/')) ?>;
 var _receiptData = <?= json_encode([
     'store_name'    => $settings['store_name'] ?? 'Granville Island Tea Co.',
     'store_address' => $settings['store_address'] ?? '',
@@ -113,34 +128,56 @@ var _receiptData = <?= json_encode([
     'pst_amount'     => (float)($transaction['pst_amount'] ?? 0),
     'total'          => (float)($transaction['total'] ?? 0),
     'payments'       => array_map(fn($p) => [
-        'method' => $p['method'],
-        'amount' => (float)$p['amount'],
+        'method'    => $p['method'],
+        'amount'    => (float)$p['amount'],
+        'reference' => $p['reference'] ?? '',
     ], $payments ?? []),
     'change'         => (float)($change ?? 0),
     'gst_number'     => $settings['gst_number'] ?? '',
     'pst_number'     => $settings['pst_number'] ?? '',
     'receipt_footer'  => $settings['receipt_footer'] ?? 'Thank you for your purchase!',
 ]) ?>;
+var _hasCashPayment = <?= json_encode(!empty(array_filter($payments ?? [], fn($p) => $p['method'] === 'cash'))) ?>;
 
 function printReceipt() {
-    fetch('http://localhost:5000/print/receipt', {
+    fetch(_printUrl + '/print/receipt', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(_receiptData)
     }).catch(() => {});
-    // Also open cash drawer
-    fetch('http://localhost:5000/print/open-drawer', {
+}
+
+function openDrawer() {
+    fetch(_printUrl + '/print/open-drawer', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: '{}'
     }).catch(() => {});
 }
 
+function showNavAndCountdown() {
+    var prompt = document.getElementById('receiptPrompt');
+    if (prompt) prompt.style.display = 'none';
+    document.getElementById('receiptCountdown').style.display = '';
+    document.getElementById('receiptNav').style.display = '';
+    startCountdown();
+}
+
+function doPrintAndContinue() {
+    printReceipt();
+    openDrawer();
+    showNavAndCountdown();
+}
+
+function doSkipAndContinue() {
+    // Still open drawer for cash transactions
+    if (_hasCashPayment) openDrawer();
+    showNavAndCountdown();
+}
+
 <?php if (!empty($autoPrint) && $transaction): ?>
-// Auto-print on sale completion
-printReceipt();
-// Show total on pole display
-fetch('http://localhost:5000/pole-display', {
+// Show total on pole display (always, regardless of receipt choice)
+fetch(_printUrl + '/pole-display', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ line1: 'TOTAL', line2: '$<?= number_format($transaction['total'], 2) ?>' })
@@ -148,16 +185,16 @@ fetch('http://localhost:5000/pole-display', {
 <?php endif; ?>
 
 // Receipt auto-redirect countdown
-(function() {
-    const baseUrl = document.querySelector('meta[name="base-url"]')?.content || '/';
-    const countdownEl = document.getElementById('countdownNum');
-    const containerEl = document.getElementById('receiptCountdown');
+function startCountdown() {
+    var baseUrl = document.querySelector('meta[name="base-url"]')?.content || '/';
+    var countdownEl = document.getElementById('countdownNum');
+    var containerEl = document.getElementById('receiptCountdown');
     if (!countdownEl) return;
 
-    let remaining = <?= RECEIPT_REDIRECT_SECONDS ?>;
-    let paused = false;
+    var remaining = <?= RECEIPT_REDIRECT_SECONDS ?>;
+    var paused = false;
 
-    const interval = setInterval(function() {
+    var interval = setInterval(function() {
         if (paused) return;
         remaining--;
         countdownEl.textContent = remaining;
@@ -176,7 +213,12 @@ fetch('http://localhost:5000/pole-display', {
             }
         }, { once: true });
     });
-})();
+}
+
+<?php if (empty($autoPrint)): ?>
+// Not auto-print (e.g. viewing old receipt) — show nav immediately
+startCountdown();
+<?php endif; ?>
 </script>
 
 <?php

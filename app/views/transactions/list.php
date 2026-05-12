@@ -13,6 +13,19 @@ ob_start();
         <input type="date" name="date_to" class="form-control" value="<?= e($dateTo) ?>">
     </div>
     <div class="col-auto">
+        <select name="terminal_id" class="form-select">
+            <option value="">All Terminals</option>
+            <?php foreach ($terminals as $t): ?>
+                <option value="<?= $t['id'] ?>" <?= ($terminalId ?? null) == $t['id'] ? 'selected' : '' ?>>
+                    <?= e($t['name']) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    <div class="col-auto">
+        <input type="text" name="customer_name" class="form-control" placeholder="Customer name..." value="<?= e($customerName ?? '') ?>">
+    </div>
+    <div class="col-auto">
         <button class="btn btn-primary">Filter</button>
     </div>
 </form>
@@ -22,12 +35,13 @@ ob_start();
         <tr>
             <th>#</th><th>Sale #</th><th>Date/Time</th><th>Cashier</th><th>Shift</th>
             <th class="text-end">Subtotal</th><th class="text-end">Tax</th>
+            <th class="text-end">Cash</th><th class="text-end">Charge</th>
             <th class="text-end">Total</th><th>Status</th>
         </tr>
     </thead>
     <tbody>
         <?php if (empty($transactions)): ?>
-            <tr><td colspan="9" class="text-muted text-center">No transactions found.</td></tr>
+            <tr><td colspan="11" class="text-muted text-center">No transactions found.</td></tr>
         <?php endif; ?>
         <?php foreach ($transactions as $t): ?>
             <?php
@@ -57,6 +71,8 @@ ob_start();
                 <td><?= $t['shift_number'] ?></td>
                 <td class="text-end">$<?= number_format($t['subtotal'], 2) ?></td>
                 <td class="text-end">$<?= number_format($t['gst_amount'] + $t['pst_amount'], 2) ?></td>
+                <td class="text-end"><?= (float)$t['cash_amount'] > 0 ? '$' . number_format($t['cash_amount'], 2) : '' ?></td>
+                <td class="text-end"><?= (float)$t['charge_amount'] > 0 ? '$' . number_format($t['charge_amount'], 2) : '' ?></td>
                 <td class="text-end fw-bold">$<?= number_format($t['total'], 2) ?></td>
                 <td>
                     <span class="badge <?= $badgeClass ?>">

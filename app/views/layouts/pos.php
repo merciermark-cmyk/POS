@@ -18,6 +18,17 @@
 <body class="pos-body">
     <?= $content ?? '' ?>
     <script src="<?= baseUrl('public/vendor/bootstrap/js/bootstrap.bundle.min.js') ?>"></script>
+    <script>
+    // Session keep-alive — prevents PHP garbage collection from expiring the session
+    // Pings every 5 minutes on all pages
+    (function(){
+        var base = document.querySelector('meta[name="base-url"]')?.content || '/';
+        setInterval(function(){
+            fetch(base + 'keep-alive', {credentials:'same-origin'}).catch(function(){});
+        }, 300000);
+    })();
+    </script>
+    <script src="<?= baseUrl('public/js/dayclose-poll.js') ?>?v=<?= filemtime(BASE_PATH . '/public/js/dayclose-poll.js') ?>"></script>
     <?php if (!empty($scripts)): ?>
         <?php foreach ($scripts as $s): ?>
             <script src="<?= baseUrl($s) ?>?v=<?= filemtime(BASE_PATH . '/' . $s) ?>"></script>

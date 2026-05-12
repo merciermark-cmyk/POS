@@ -4,12 +4,22 @@ class Modifier extends BaseModel {
     public function getAll(bool $activeOnly = false): array {
         $sql = 'SELECT * FROM pos_modifiers';
         if ($activeOnly) $sql .= ' WHERE is_active = 1';
-        $sql .= ' ORDER BY sort_order, name';
+        $sql .= ' ORDER BY modifier_group, sort_order, name';
         return $this->findAll($sql);
     }
 
+    /**
+     * Return active modifiers grouped by modifier_group.
+     * ['beverage' => [...], 'loose_tea' => [...]]
+     */
     public function getActiveModifiers(): array {
-        return $this->getAll(true);
+        $rows = $this->getAll(true);
+        $grouped = [];
+        foreach ($rows as $row) {
+            $group = $row['modifier_group'] ?? 'beverage';
+            $grouped[$group][] = $row;
+        }
+        return $grouped;
     }
 
     public function findById(int $id): ?array {
@@ -18,24 +28,26 @@ class Modifier extends BaseModel {
 
     public function create(array $data): int {
         return (int)$this->insert(
-            'INSERT INTO pos_modifiers (name, price, sort_order, is_active) VALUES (?, ?, ?, ?)',
+            'INSERT INTO pos_modifiers (name, price, sort_order, is_active, modifier_group) VALUES (?, ?, ?, ?, ?)',
             [
                 $data['name'],
                 $data['price'],
                 (int)($data['sort_order'] ?? 0),
                 (int)($data['is_active'] ?? 1),
+                $data['modifier_group'] ?? 'beverage',
             ]
         );
     }
 
     public function update(int $id, array $data): void {
         $this->execute(
-            'UPDATE pos_modifiers SET name = ?, price = ?, sort_order = ?, is_active = ?, updated_at = NOW() WHERE id = ?',
+            'UPDATE pos_modifiers SET name = ?, price = ?, sort_order = ?, is_active = ?, modifier_group = ?, updated_at = NOW() WHERE id = ?',
             [
                 $data['name'],
                 $data['price'],
                 (int)($data['sort_order'] ?? 0),
                 (int)($data['is_active'] ?? 1),
+                $data['modifier_group'] ?? 'beverage',
                 $id,
             ]
         );

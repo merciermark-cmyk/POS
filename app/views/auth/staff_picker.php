@@ -7,7 +7,9 @@ ob_start();
 <div class="staff-picker">
     <div class="staff-picker-header">
         <h1><?= e($settings['store_name'] ?? APP_NAME) ?></h1>
-        <div class="shift-info">Shift #<?= (int)$shift['id'] ?> &mdash; Opened by <?= e($shift['username'] ?? '') ?></div>
+        <?php if ($shift): ?>
+            <div class="shift-info">Shift #<?= (int)$shift['id'] ?> &mdash; Opened by <?= e($shift['username'] ?? '') ?></div>
+        <?php endif; ?>
     </div>
 
     <?php $flash = getFlash('error'); if ($flash): ?>
@@ -17,13 +19,20 @@ ob_start();
         <div class="alert alert-success" style="max-width:500px"><?= e($flash) ?></div>
     <?php endif; ?>
 
+    <?php if (($heldOrderCount ?? 0) > 0): ?>
+        <div class="alert alert-warning py-2 px-3 d-inline-block" style="max-width:500px">
+            <strong><?= $heldOrderCount ?></strong> held order(s) this shift
+        </div>
+    <?php endif; ?>
+
     <div class="staff-picker-prompt">Who's ringing in?</div>
 
     <div class="staff-grid">
         <?php foreach ($staff as $member): ?>
             <div class="staff-card"
                  data-user-id="<?= (int)$member['id'] ?>"
-                 data-has-code="<?= empty($member['staff_code']) ? '0' : '1' ?>"
+                 data-has-code="<?= empty($member['pin']) ? '0' : '1' ?>"
+                 data-pin-length="<?= strlen($member['pin'] ?? '') ?>"
                  data-username="<?= e($member['username']) ?>">
                 <div class="staff-avatar"><?= e(mb_strtoupper(mb_substr($member['username'], 0, 2))) ?></div>
                 <div class="staff-name"><?= e($member['username']) ?></div>
@@ -33,17 +42,15 @@ ob_start();
     </div>
 
     <div class="staff-picker-footer">
-        <a href="<?= baseUrl('login') ?>" class="btn btn-outline-light btn-sm me-2">Manager Login</a>
+        <a href="<?= baseUrl('pin') ?>" class="btn btn-outline-light btn-sm me-2">Manager Login</a>
         <?php if (isLoggedIn()): ?>
             <a href="<?= baseUrl('transactions') ?>" class="btn btn-outline-light btn-sm me-2">Transactions</a>
             <?php if (isManager()): ?>
                 <a href="<?= baseUrl('reports/daily') ?>" class="btn btn-outline-light btn-sm me-2">Reports</a>
                 <a href="<?= baseUrl('users') ?>" class="btn btn-outline-light btn-sm me-2">Admin</a>
             <?php endif; ?>
-            <a href="<?= baseUrl('shift/close') ?>" class="btn btn-outline-warning btn-sm me-2">Close Shift</a>
             <a href="<?= baseUrl('logout') ?>" class="btn btn-outline-light btn-sm">Logout</a>
         <?php else: ?>
-            <a href="<?= baseUrl('shift/close') ?>" class="btn btn-outline-warning btn-sm">Close Shift</a>
         <?php endif; ?>
     </div>
 </div>
@@ -52,19 +59,17 @@ ob_start();
 <form method="post" action="<?= baseUrl('pick-staff') ?>" id="staffPickForm" style="display:none">
     <?= csrfField() ?>
     <input type="hidden" name="user_id" value="">
-    <input type="hidden" name="staff_code" value="">
+    <input type="hidden" name="pin" value="">
 </form>
 
 <!-- Code entry overlay -->
 <div class="code-overlay" id="codeOverlay">
     <div class="code-panel">
         <h3 id="codeOverlayName" class="mb-3"></h3>
-        <p class="text-muted mb-3">Enter your 3-digit code</p>
-        <div id="codeError" class="alert alert-danger py-1 mb-2" style="display:none">Incorrect code</div>
-        <div class="code-dots d-flex justify-content-center gap-3 mb-4">
-            <span class="code-dot"></span>
-            <span class="code-dot"></span>
-            <span class="code-dot"></span>
+        <p class="text-muted mb-3">Enter your PIN</p>
+        <div id="codeError" class="alert alert-danger py-1 mb-2" style="display:none">Incorrect PIN</div>
+        <div class="code-dots d-flex justify-content-center gap-3 mb-4" id="codeDots">
+            <!-- dots generated dynamically based on PIN length -->
         </div>
         <div class="pin-pad">
             <?php for ($i = 1; $i <= 9; $i++): ?>

@@ -48,7 +48,7 @@ def write_pole(line1: str, line2: str) -> bytes:
     """Write two lines to 20-char VFD pole display."""
     l1 = line1[:20].ljust(20)
     l2 = line2[:20].rjust(20)
-    return VFD_CLEAR + l1.encode('ascii', errors='replace') + VFD_LINE2 + l2.encode('ascii', errors='replace')
+    return l1.encode('ascii', errors='replace') + VFD_LINE2 + l2.encode('ascii', errors='replace')
 
 
 def _line(text: str) -> bytes:
@@ -142,6 +142,12 @@ def build_receipt(data: dict) -> bytes:
     cashier = data.get('cashier', '')
     if cashier:
         out += _line(f'Cashier: {cashier}')
+    reason = data.get('reason', '')
+    if reason:
+        out += _line(f'Reason: {reason}')
+    auth_by = data.get('authorized_by', '')
+    if auth_by:
+        out += _line(f'Authorized by: {auth_by}')
     out += _divider()
 
     # Items

@@ -21,26 +21,26 @@
             <input type="hidden" name="pin" id="pinInput" value="">
 
             <div class="pin-display mb-3">
-                <div class="pin-dots d-flex justify-content-center gap-3">
-                    <span class="pin-dot" data-index="0"></span>
-                    <span class="pin-dot" data-index="1"></span>
-                    <span class="pin-dot" data-index="2"></span>
-                    <span class="pin-dot" data-index="3"></span>
+                <div class="pin-dots d-flex justify-content-center gap-3" id="pinDots">
+                    <span class="pin-dot"></span>
+                    <span class="pin-dot"></span>
+                    <span class="pin-dot"></span>
                 </div>
             </div>
 
             <div class="pin-pad">
                 <?php for ($i = 1; $i <= 9; $i++): ?>
-                    <button type="button" class="btn btn-outline-light btn-pin" data-digit="<?= $i ?>"><?= $i ?></button>
+                    <button type="button" class="btn btn-outline-dark btn-pin" data-digit="<?= $i ?>"><?= $i ?></button>
                 <?php endfor; ?>
                 <button type="button" class="btn btn-outline-danger btn-pin" data-action="clear">C</button>
-                <button type="button" class="btn btn-outline-light btn-pin" data-digit="0">0</button>
-                <button type="button" class="btn btn-outline-warning btn-pin" data-action="backspace">&larr;</button>
+                <button type="button" class="btn btn-outline-dark btn-pin" data-digit="0">0</button>
+                <button type="button" class="btn btn-success btn-pin" data-action="submit">GO</button>
             </div>
         </form>
 
-        <div class="mt-3">
-            <a href="<?= baseUrl('login') ?>" class="text-muted">Use password instead</a>
+        <div class="mt-3 d-flex flex-column align-items-center gap-2">
+            <a href="https://labels.granvilletea.com" target="_blank" class="btn btn-outline-secondary btn-sm">Print Labels</a>
+            <a href="<?= baseUrl('login') ?>" class="text-muted small">Use password instead</a>
         </div>
     </div>
 </div>

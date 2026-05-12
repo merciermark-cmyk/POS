@@ -9,16 +9,29 @@ class Terminal extends BaseModel {
         return $this->findAll('SELECT * FROM pos_terminals WHERE is_active = 1 ORDER BY name');
     }
 
+    public function getForShifts(): array {
+        return $this->findAll('SELECT * FROM pos_terminals WHERE is_active = 1 AND manual_entry_only = 0 ORDER BY name');
+    }
+
+    public function getManualEntryOnly(): array {
+        return $this->findAll('SELECT * FROM pos_terminals WHERE is_active = 1 AND manual_entry_only = 1 ORDER BY name');
+    }
+
     public function findById(int $id): ?array {
         return $this->findOne('SELECT * FROM pos_terminals WHERE id = ?', [$id]);
     }
 
+    public function findByIp(string $ip): ?array {
+        return $this->findOne('SELECT * FROM pos_terminals WHERE ip_address = ? AND is_active = 1', [$ip]);
+    }
+
     public function create(array $data): int {
         return (int)$this->insert(
-            'INSERT INTO pos_terminals (name, print_service_url, is_active) VALUES (?, ?, ?)',
+            'INSERT INTO pos_terminals (name, print_service_url, moneris_terminal_id, is_active) VALUES (?, ?, ?, ?)',
             [
                 $data['name'],
                 $data['print_service_url'] ?? 'http://localhost:5000',
+                $data['moneris_terminal_id'] ?? null,
                 (int)($data['is_active'] ?? 1),
             ]
         );
@@ -26,10 +39,11 @@ class Terminal extends BaseModel {
 
     public function update(int $id, array $data): void {
         $this->execute(
-            'UPDATE pos_terminals SET name = ?, print_service_url = ?, is_active = ?, updated_at = NOW() WHERE id = ?',
+            'UPDATE pos_terminals SET name = ?, print_service_url = ?, moneris_terminal_id = ?, is_active = ?, updated_at = NOW() WHERE id = ?',
             [
                 $data['name'],
                 $data['print_service_url'] ?? 'http://localhost:5000',
+                $data['moneris_terminal_id'] ?? null,
                 (int)($data['is_active'] ?? 1),
                 $id,
             ]

@@ -5,23 +5,52 @@ class SaleController {
         requireOperator();
         requireShift();
 
-        $categories = (new Category())->getAll();
-        $products   = (new Product())->getAll();
+        $catModel     = new Category();
+        $categories   = $catModel->getAll();
+        $categoryTree = $catModel->getAllWithHierarchy();
+        $products     = (new Product())->getAll();
         $cart         = $_SESSION['pos_cart'] ?? [];
         $wholesale    = !empty($_SESSION['pos_wholesale']);
         $cartDiscount = !empty($_SESSION['pos_cart_discount']);
         $cartTotals   = calculateCartTotals($cart, $wholesale, $cartDiscount);
         $settings     = (new PosSetting())->getAll();
 
-        // Beverage modifiers: find beverage category ID and load active modifiers
-        $beverageCatId = null;
-        foreach ($categories as $cat) {
+        // Beverage modifiers: find beverage category IDs (parent + children)
+        $beverageCatIds = [];
+        foreach ($categoryTree as $cat) {
             if ($cat['name'] === BEVERAGE_CATEGORY_NAME) {
-                $beverageCatId = (int)$cat['id'];
+                $beverageCatIds[] = (int)$cat['id'];
+                foreach ($cat['children'] as $child) {
+                    $beverageCatIds[] = (int)$child['id'];
+                }
                 break;
             }
         }
+
+        // Loose tea modifiers: find loose tea category IDs
+        $looseTeaCatNames = REPORT_CATEGORY_GROUPS['Loose Tea'] ?? [];
+        $looseTeaCatIds = [];
+        foreach ($categoryTree as $cat) {
+            if (in_array($cat['name'], $looseTeaCatNames, true)) {
+                $looseTeaCatIds[] = (int)$cat['id'];
+                foreach ($cat['children'] ?? [] as $child) {
+                    $looseTeaCatIds[] = (int)$child['id'];
+                }
+            }
+            // Also check children (loose tea cats may be subcategories)
+            foreach ($cat['children'] ?? [] as $child) {
+                if (in_array($child['name'], $looseTeaCatNames, true)) {
+                    $looseTeaCatIds[] = (int)$child['id'];
+                }
+            }
+        }
+        $looseTeaCatIds = array_values(array_unique($looseTeaCatIds));
+
         $activeModifiers = (new Modifier())->getActiveModifiers();
+        $standaloneRefundThreshold = (float)($settings['standalone_refund_threshold'] ?? '50.00');
+
+        // Held order count for badge
+        $heldOrderCount = (new HeldOrder())->countActiveForShift($_SESSION['pos_shift_id']);
 
         // Terminal info for header badge and print URL
         $terminalName     = null;
@@ -58,16 +87,18 @@ class SaleController {
 
         // Parse payments from POST
         $payments = [];
-        $payMethods = $_POST['pay_method'] ?? [];
-        $payAmounts = $_POST['pay_amount'] ?? [];
-        $payRefs    = $_POST['pay_reference'] ?? [];
+        $payMethods    = $_POST['pay_method'] ?? [];
+        $payAmounts    = $_POST['pay_amount'] ?? [];
+        $payRefs       = $_POST['pay_reference'] ?? [];
+        $payMonerisIds = $_POST['pay_moneris_id'] ?? [];
 
         for ($i = 0; $i < count($payMethods); $i++) {
             if (!empty($payMethods[$i]) && (float)($payAmounts[$i] ?? 0) > 0) {
                 $payments[] = [
-                    'method'    => $payMethods[$i],
-                    'amount'    => round((float)$payAmounts[$i], 2),
-                    'reference' => $payRefs[$i] ?? null,
+                    'method'                 => $payMethods[$i],
+                    'amount'                 => round((float)$payAmounts[$i], 2),
+                    'reference'              => $payRefs[$i] ?? null,
+                    'moneris_transaction_id' => !empty($payMonerisIds[$i]) ? (int)$payMonerisIds[$i] : null,
                 ];
             }
         }
@@ -78,13 +109,18 @@ class SaleController {
         $cartTotals   = calculateCartTotals($cart, $wholesale, $cartDiscount);
         $totalPaid    = array_sum(array_column($payments, 'amount'));
 
-        if ($totalPaid < $cartTotals['total']) {
+        $allCash = !empty($payments) && empty(array_filter($payments, fn($p) => $p['method'] !== 'cash'));
+        $minRequired = $allCash ? nickelRound($cartTotals['total']) : $cartTotals['total'];
+        if ($totalPaid < $minRequired) {
             setFlash('error', 'Payment amount insufficient.');
             redirect('/sale');
             return;
         }
 
         $change = round($totalPaid - $cartTotals['total'], 2);
+        if ($hasCash && $change > 0) {
+            $change = nickelRound($change);
+        }
 
         // Get location
         $locationId = (new PosSetting())->getShopLocationId();
@@ -106,6 +142,14 @@ class SaleController {
                 $wholesale,
                 $cartDiscount
             );
+
+            // Link Moneris transactions to the POS transaction
+            $monerisModel = new Moneris();
+            foreach ($payments as $pay) {
+                if (!empty($pay['moneris_transaction_id'])) {
+                    $monerisModel->linkToTransaction((int)$pay['moneris_transaction_id'], $txnId);
+                }
+            }
 
             // Clear cart + wholesale + discount flags
             unset($_SESSION['pos_cart']);
@@ -136,6 +180,16 @@ class SaleController {
         $payments    = $txnModel->getPayments($txnId);
         $settings    = (new PosSetting())->getAll();
         $autoPrint   = !empty($_SESSION['auto_print']);
+
+        // Terminal print URL (same pattern as terminal() method)
+        $terminalPrintUrl = PRINT_SERVICE_URL;
+        $terminalId = $_SESSION['pos_terminal_id'] ?? null;
+        if ($terminalId) {
+            $terminal = (new Terminal())->findById($terminalId);
+            if ($terminal && !empty($terminal['print_service_url'])) {
+                $terminalPrintUrl = rtrim($terminal['print_service_url'], '/');
+            }
+        }
 
         unset($_SESSION['last_txn_id'], $_SESSION['last_change'], $_SESSION['auto_print']);
 

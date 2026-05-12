@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POS Daily Procedures — Granville Tea</title>
+    <style>
+        @media print {
+            body { margin: 0.5in; }
+            .no-print { display: none; }
+        }
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            max-width: 700px;
+            margin: 30px auto;
+            padding: 0 20px;
+            color: #222;
+            line-height: 1.5;
+        }
+        h1 {
+            text-align: center;
+            font-size: 22px;
+            border-bottom: 2px solid #333;
+            padding-bottom: 8px;
+            margin-bottom: 4px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            font-size: 13px;
+            margin-bottom: 24px;
+        }
+        h2 {
+            font-size: 16px;
+            background: #333;
+            color: #fff;
+            padding: 6px 12px;
+            margin: 24px 0 12px;
+            border-radius: 3px;
+        }
+        h3 {
+            font-size: 14px;
+            margin: 16px 0 8px;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 4px;
+        }
+        ol, ul {
+            margin: 0 0 12px 0;
+            padding-left: 24px;
+        }
+        li {
+            margin-bottom: 6px;
+        }
+        .step-number {
+            display: inline-block;
+            background: #333;
+            color: #fff;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            text-align: center;
+            font-size: 13px;
+            line-height: 22px;
+            margin-right: 6px;
+            font-weight: bold;
+        }
+        .steps li {
+            list-style: none;
+            margin-bottom: 10px;
+        }
+        .steps {
+            padding-left: 0;
+        }
+        .note {
+            background: #fff8e1;
+            border-left: 4px solid #f9a825;
+            padding: 8px 12px;
+            margin: 12px 0;
+            font-size: 13px;
+        }
+        .important {
+            background: #fce4ec;
+            border-left: 4px solid #c62828;
+            padding: 8px 12px;
+            margin: 12px 0;
+            font-size: 13px;
+        }
+        .formula {
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+            padding: 10px 14px;
+            font-family: Consolas, monospace;
+            font-size: 13px;
+            margin: 10px 0;
+            border-radius: 3px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+            font-size: 13px;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 6px 10px;
+            text-align: left;
+        }
+        th {
+            background: #f0f0f0;
+            font-weight: bold;
+        }
+        .green { color: #2e7d32; font-weight: bold; }
+        .red { color: #c62828; font-weight: bold; }
+        .print-btn {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 30px;
+            background: #333;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            font-size: 15px;
+            cursor: pointer;
+        }
+        .print-btn:hover { background: #555; }
+        .checklist li {
+            list-style: none;
+            position: relative;
+            padding-left: 6px;
+        }
+        .checklist li::before {
+            content: "\2610";
+            position: absolute;
+            left: -18px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+
+<button class="print-btn no-print" onclick="window.print()">Print This Guide</button>
+
+<h1>POS Daily Procedures</h1>
+<p class="subtitle">Granville Tea — Reference Guide for Staff</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- OPENING PROCEDURES                          -->
+<!-- ═══════════════════════════════════════════ -->
+
+<h2 style="background:#2e7d32;">OPENING PROCEDURES</h2>
+
+<h2>1. Before Opening</h2>
+
+<ul class="checklist">
+    <li>Count the cash float and confirm the amount (default $200.00)</li>
+    <li>Place the float in the cash drawer</li>
+    <li>Make sure the receipt printer and card terminal are powered on</li>
+</ul>
+
+<!-- ───────────────────────────────────────── -->
+<h2>2. Open the Shift</h2>
+
+<ol class="steps">
+    <li>
+        <span class="step-number">1</span>
+        Go to <strong>pos.granvilletea.com</strong> and log in with your username and password (or PIN)
+    </li>
+    <li>
+        <span class="step-number">2</span>
+        On the <strong>Open Shift</strong> screen, confirm the terminal name shown (the system remembers which machine you're on)
+    </li>
+    <li>
+        <span class="step-number">3</span>
+        Enter the <strong>Opening Float</strong> amount (the cash you placed in the drawer)
+    </li>
+    <li>
+        <span class="step-number">4</span>
+        Click <strong>"Start Shift"</strong> — you'll go straight to the sales terminal
+    </li>
+</ol>
+
+<div class="note">
+    <strong>Note:</strong> Only one shift can be open per terminal at a time. If a shift is already open on your terminal, you'll be taken directly to the staff picker.
+</div>
+
+<!-- ───────────────────────────────────────── -->
+<h2>3. Switching Between Staff</h2>
+
+<p>Multiple staff can use the same terminal during a shift:</p>
+
+<ol class="steps">
+    <li>
+        <span class="step-number">1</span>
+        Click <strong>"Switch User"</strong> in the top navigation bar (or wait for the idle timeout)
+    </li>
+    <li>
+        <span class="step-number">2</span>
+        The <strong>Staff Picker</strong> appears — tap your name
+    </li>
+    <li>
+        <span class="step-number">3</span>
+        Enter your <strong>PIN</strong> if prompted (1–3 digits)
+    </li>
+    <li>
+        <span class="step-number">4</span>
+        You're now on the terminal — the shift stays open, and your name appears on transactions
+    </li>
+</ol>
+
+<div class="note">
+    <strong>Tip:</strong> The system automatically returns to the staff picker after a period of inactivity, so you don't need to manually switch if someone walks away.
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- CLOSING PROCEDURES                          -->
+<!-- ═══════════════════════════════════════════ -->
+
+<h2 style="background:#c62828;">CLOSING PROCEDURES</h2>
+
+<h2>4. Before Closing</h2>
+
+<ul class="checklist">
+    <li>Finish all pending transactions — no open sales in the cart</li>
+    <li>Process any outstanding refunds or voids</li>
+    <li>Make sure all card transactions have been settled (check terminal)</li>
+</ul>
+
+<!-- ───────────────────────────────────────── -->
+<h2>5. End of Day</h2>
+
+<ol class="steps">
+    <li>
+        <span class="step-number">1</span>
+        Click <strong>"Admin"</strong> in the top bar, enter your manager PIN, then click <strong>"End of Day"</strong>
+    </li>
+    <li>
+        <span class="step-number">2</span>
+        Review the <strong>Shift Summary</strong> displayed on screen:
+        <ul>
+            <li>Total number of transactions</li>
+            <li>Total sales amount</li>
+            <li>Payment breakdown (cash, card, gift card)</li>
+        </ul>
+    </li>
+    <li>
+        <span class="step-number">3</span>
+        <strong>Count the cash in the drawer</strong> — count all bills and coins carefully
+    </li>
+    <li>
+        <span class="step-number">4</span>
+        Enter the counted amount in the <strong>"Closing Cash Count"</strong> field
+    </li>
+    <li>
+        <span class="step-number">5</span>
+        Add any <strong>notes</strong> if needed (e.g. "broke a coin roll", "paid supplier from drawer")
+    </li>
+    <li>
+        <span class="step-number">6</span>
+        Click <strong>"End of Day"</strong> to submit
+    </li>
+</ol>
+
+<div class="note">
+    <strong>Tip:</strong> Count the cash twice to be sure. Include the opening float in your count — the system accounts for it automatically.
+</div>
+
+<!-- ───────────────────────────────────────── -->
+<h2>6. Understanding the Shift Report</h2>
+
+<p>After closing, the <strong>Shift Report</strong> appears automatically. Here's what it shows:</p>
+
+<table>
+    <tr>
+        <th>Section</th>
+        <th>What It Shows</th>
+    </tr>
+    <tr>
+        <td>Shift Times</td>
+        <td>When the shift was opened and closed</td>
+    </tr>
+    <tr>
+        <td>Transaction Summary</td>
+        <td>Number of sales, voids, and refunds</td>
+    </tr>
+    <tr>
+        <td>Sales Breakdown</td>
+        <td>Subtotal, GST (5%), PST (7%), and total</td>
+    </tr>
+    <tr>
+        <td>Payment Breakdown</td>
+        <td>Totals by payment method (cash, card, gift card)</td>
+    </tr>
+    <tr>
+        <td>Cash Reconciliation</td>
+        <td>Expected cash vs. your count (see below)</td>
+    </tr>
+    <tr>
+        <td>Transaction List</td>
+        <td>Every transaction from the shift</td>
+    </tr>
+</table>
+
+<!-- ───────────────────────────────────────── -->
+<h2>7. Cash Reconciliation</h2>
+
+<p>The system automatically calculates what <em>should</em> be in the drawer:</p>
+
+<div class="formula">
+    Expected Cash = Opening Float + Cash Sales &minus; Cash Refunds &minus; Petty Cash
+</div>
+
+<p>Then it compares your count to the expected amount:</p>
+
+<div class="formula">
+    Over/Short = Your Cash Count &minus; Expected Cash
+</div>
+
+<table>
+    <tr>
+        <th>Result</th>
+        <th>Meaning</th>
+        <th>Display</th>
+    </tr>
+    <tr>
+        <td>$0.00</td>
+        <td>Drawer is perfectly balanced</td>
+        <td class="green">Green</td>
+    </tr>
+    <tr>
+        <td>+$2.50</td>
+        <td>Drawer is over by $2.50</td>
+        <td class="green">Green</td>
+    </tr>
+    <tr>
+        <td>&minus;$5.00</td>
+        <td>Drawer is short by $5.00</td>
+        <td class="red">Red</td>
+    </tr>
+</table>
+
+<h3>Example</h3>
+<table>
+    <tr><td>Opening Float</td><td style="text-align:right">$200.00</td></tr>
+    <tr><td>+ Cash Sales</td><td style="text-align:right">$485.00</td></tr>
+    <tr><td>&minus; Cash Refunds</td><td style="text-align:right">$15.00</td></tr>
+    <tr><td>&minus; Petty Cash</td><td style="text-align:right">$5.00</td></tr>
+    <tr><th>= Expected Cash</th><th style="text-align:right">$665.00</th></tr>
+    <tr><td>Your Count</td><td style="text-align:right">$663.50</td></tr>
+    <tr><td><strong>Over/Short</strong></td><td style="text-align:right" class="red">&minus;$1.50</td></tr>
+</table>
+
+<div class="important">
+    <strong>If the drawer is short or over:</strong> Double-check your count. If it's still off, note the discrepancy — a manager will review it in Shift History.
+</div>
+
+<!-- ───────────────────────────────────────── -->
+<h2>8. After Closing</h2>
+
+<ul class="checklist">
+    <li>Review the shift report for accuracy</li>
+    <li>Remove cash from the drawer (leave the float for the next shift if applicable)</li>
+    <li>Secure the cash according to store policy</li>
+    <li>Log out of the POS</li>
+</ul>
+
+<!-- ───────────────────────────────────────── -->
+<h2>9. Quick Reference — Manager Tasks</h2>
+
+<table>
+    <tr>
+        <th>Task</th>
+        <th>Where</th>
+    </tr>
+    <tr>
+        <td>View past shift reports</td>
+        <td>Reports &rarr; Shift History &rarr; click a shift</td>
+    </tr>
+    <tr>
+        <td>View daily sales summary</td>
+        <td>Reports &rarr; Daily Sales</td>
+    </tr>
+    <tr>
+        <td>View monthly summary</td>
+        <td>Reports &rarr; Monthly Sales</td>
+    </tr>
+    <tr>
+        <td>View product-level sales</td>
+        <td>Reports &rarr; Product Sales</td>
+    </tr>
+    <tr>
+        <td>Void a transaction</td>
+        <td>Transactions &rarr; find sale &rarr; Void (manager only)</td>
+    </tr>
+    <tr>
+        <td>Process a refund</td>
+        <td>Transactions &rarr; find sale &rarr; Refund</td>
+    </tr>
+    <tr>
+        <td>Enter Iced Tea Register totals</td>
+        <td>Reports &rarr; Manual Entry (transactions, cash, card)</td>
+    </tr>
+</table>
+
+<br>
+<p style="text-align:center; color:#999; font-size:12px;">
+    Granville Tea POS — Daily Procedures v1.2 — April 2026
+</p>
+
+</body>
+</html>

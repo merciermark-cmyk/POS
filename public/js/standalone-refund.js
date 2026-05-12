@@ -1,22 +1,17 @@
 /**
- * Standalone Refund — modal logic + manager PIN authorization
+ * Standalone Refund — modal logic.
+ * PIN authorization is handled by admin-menu.js; this module
+ * exposes window.openStandaloneRefund(auth) for that purpose.
  */
 (function() {
     'use strict';
 
     var baseUrl = document.querySelector('meta[name="base-url"]')?.content || '/';
-    var refundModal, pinModal;
+    var refundModal;
     var managerAuth = null; // {id, username} when authorized
 
     document.addEventListener('DOMContentLoaded', function() {
         refundModal = new bootstrap.Modal(document.getElementById('standaloneRefundModal'));
-        pinModal    = new bootstrap.Modal(document.getElementById('managerPinModal'));
-
-        // Open refund modal
-        document.getElementById('refundBtn').addEventListener('click', function() {
-            resetRefundModal();
-            refundModal.show();
-        });
 
         // Amount input — check threshold
         var amountInput = document.getElementById('refundAmount');
@@ -24,49 +19,38 @@
             checkThreshold();
         });
 
-        // Request manager PIN button
+        // Request manager PIN button — use shared PIN modal from admin-menu.js
         document.getElementById('requestPinBtn').addEventListener('click', function() {
             refundModal.hide();
-            resetPinModal();
-            pinModal.show();
-            setTimeout(function() {
-                document.getElementById('managerPinInput').focus();
-            }, 300);
-        });
-
-        // PIN keypad
-        document.querySelectorAll('.pin-keypad-btn').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                var key = this.dataset.key;
-                var input = document.getElementById('managerPinInput');
-                if (key === 'clear') {
-                    input.value = '';
-                } else if (key === 'backspace') {
-                    input.value = input.value.slice(0, -1);
-                } else {
-                    input.value += key;
-                }
-                document.getElementById('pinError').style.display = 'none';
-            });
-        });
-
-        // Verify PIN
-        document.getElementById('verifyPinBtn').addEventListener('click', verifyPin);
-        document.getElementById('managerPinInput').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') verifyPin();
-        });
-
-        // Cancel PIN — go back to refund modal
-        document.getElementById('managerPinModal').addEventListener('hidden.bs.modal', function() {
-            // Only re-open refund if we didn't just authorize
-            if (!managerAuth) {
-                refundModal.show();
+            if (window.showManagerPinModal) {
+                window.showManagerPinModal(function(auth) {
+                    managerAuth = auth;
+                    document.getElementById('authBadge').textContent = 'Authorized by: ' + auth.username;
+                    document.getElementById('authBadge').style.display = '';
+                    document.getElementById('thresholdWarning').style.display = 'none';
+                    document.getElementById('requestPinBtn').style.display = 'none';
+                    refundModal.show();
+                }, function() {
+                    // Cancelled — re-open refund modal
+                    refundModal.show();
+                });
             }
         });
 
         // Process refund
         document.getElementById('processRefundBtn').addEventListener('click', processRefund);
     });
+
+    // Called from admin-menu.js after manager PIN verified
+    window.openStandaloneRefund = function(auth) {
+        resetRefundModal();
+        if (auth) {
+            managerAuth = auth;
+            document.getElementById('authBadge').textContent = 'Authorized by: ' + auth.username;
+            document.getElementById('authBadge').style.display = '';
+        }
+        refundModal.show();
+    };
 
     function resetRefundModal() {
         document.getElementById('refundAmount').value = '';
@@ -78,12 +62,6 @@
         document.getElementById('thresholdWarning').style.display = 'none';
         document.getElementById('processRefundBtn').disabled = false;
         managerAuth = null;
-    }
-
-    function resetPinModal() {
-        document.getElementById('managerPinInput').value = '';
-        document.getElementById('pinError').style.display = 'none';
-        document.getElementById('verifyPinBtn').disabled = false;
     }
 
     function checkThreshold() {
@@ -101,44 +79,6 @@
             warning.style.display = 'none';
             pinBtn.style.display = 'none';
         }
-    }
-
-    function verifyPin() {
-        var pin = document.getElementById('managerPinInput').value.trim();
-        if (!pin) return;
-
-        var btn = document.getElementById('verifyPinBtn');
-        btn.disabled = true;
-
-        var form = new FormData();
-        form.append('pin', pin);
-
-        fetch(baseUrl + 'api/verify-manager-pin', { method: 'POST', body: form })
-            .then(function(r) { return r.json(); })
-            .then(function(data) {
-                if (data.error) {
-                    document.getElementById('pinError').textContent = data.error;
-                    document.getElementById('pinError').style.display = '';
-                    btn.disabled = false;
-                    document.getElementById('managerPinInput').value = '';
-                    document.getElementById('managerPinInput').focus();
-                    return;
-                }
-                // Success
-                managerAuth = { id: data.id, username: data.username };
-                pinModal.hide();
-                // Show auth badge on refund modal
-                document.getElementById('authBadge').textContent = 'Authorized by: ' + data.username;
-                document.getElementById('authBadge').style.display = '';
-                document.getElementById('thresholdWarning').style.display = 'none';
-                document.getElementById('requestPinBtn').style.display = 'none';
-                refundModal.show();
-            })
-            .catch(function() {
-                document.getElementById('pinError').textContent = 'Network error. Try again.';
-                document.getElementById('pinError').style.display = '';
-                btn.disabled = false;
-            });
     }
 
     function processRefund() {

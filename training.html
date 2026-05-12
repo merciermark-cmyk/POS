@@ -1,0 +1,1568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>POS Training Mode</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+/* ── Reset & Base ─────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; font-family: system-ui, -apple-system, sans-serif; }
+body { overflow: hidden; }
+body.scroll-ok { overflow: auto; }
+body { background: #f0f0f0; }
+
+/* ── Training Banner ──────────────────────────────── */
+.training-banner {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10000;
+    background: linear-gradient(90deg, #f59e0b, #d97706);
+    color: #000; text-align: center; padding: 6px 16px;
+    font-weight: 700; font-size: 0.95rem; letter-spacing: 1px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+.training-banner span { animation: pulse-text 2s ease-in-out infinite; }
+@keyframes pulse-text { 0%,100%{opacity:1} 50%{opacity:0.7} }
+.screen-with-banner { padding-top: 36px; }
+
+/* ── PIN Login ────────────────────────────────────── */
+.screen-login {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #1a1a2e;
+}
+.login-card {
+    background: #fff; border-radius: 16px; padding: 32px 28px;
+    width: 340px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    text-align: center;
+}
+.login-card h3 { margin-bottom: 8px; }
+.pin-dots { display: flex; justify-content: center; gap: 12px; margin: 24px 0 20px; }
+.pin-dot {
+    width: 20px; height: 20px; border-radius: 50%;
+    border: 2px solid #6c757d; display: inline-block; transition: all 0.15s;
+}
+.pin-dot.filled { background: #0d6efd; border-color: #0d6efd; }
+.pin-pad {
+    display: grid; grid-template-columns: repeat(3,1fr); gap: 10px;
+    max-width: 280px; margin: 0 auto;
+}
+.btn-pin {
+    width: 80px; height: 80px; font-size: 1.8rem; font-weight: bold;
+    border-radius: 50%; border: 1px solid #dee2e6; background: #f8f9fa;
+    cursor: pointer; transition: all 0.15s; display: flex; align-items: center;
+    justify-content: center; margin: 0 auto;
+}
+.btn-pin:hover { background: #e9ecef; }
+.btn-pin:active { background: #dee2e6; transform: scale(0.95); }
+.btn-pin.action { font-size: 1.2rem; background: transparent; border-color: transparent; }
+
+/* ── Staff Picker ─────────────────────────────────── */
+.screen-staff {
+    min-height: 100vh;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #fff;
+}
+.staff-picker-header { text-align: center; margin-bottom: 12px; }
+.staff-picker-header h1 { font-size: 1.8rem; font-weight: 700; }
+.shift-info { color: rgba(255,255,255,0.6); font-size: 0.9rem; }
+.staff-picker-prompt { font-size: 1.3rem; margin-bottom: 24px; opacity: 0.9; }
+.staff-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 16px; width: 100%; max-width: 740px; padding: 0 20px;
+}
+.staff-card {
+    background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.15);
+    border-radius: 16px; padding: 24px 12px; text-align: center; cursor: pointer;
+    transition: all 0.2s;
+}
+.staff-card:hover { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.3); transform: translateY(-2px); }
+.staff-card:active { transform: scale(0.97); }
+.staff-avatar {
+    width: 72px; height: 72px; border-radius: 50%; margin: 0 auto 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.5rem; font-weight: 700; color: #fff;
+}
+.staff-name { font-weight: 600; font-size: 1.05rem; }
+.staff-role { font-size: 0.85rem; color: rgba(255,255,255,0.6); margin-top: 4px; }
+.staff-card:nth-child(1) .staff-avatar { background: #0d6efd; }
+.staff-card:nth-child(2) .staff-avatar { background: #6f42c1; }
+.staff-card:nth-child(3) .staff-avatar { background: #198754; }
+.staff-card:nth-child(4) .staff-avatar { background: #dc3545; }
+.staff-card:nth-child(5) .staff-avatar { background: #fd7e14; }
+.staff-card:nth-child(6) .staff-avatar { background: #20c997; }
+.staff-picker-footer { margin-top: 32px; display: flex; gap: 12px; }
+
+/* ── Code Overlay (PIN for staff) ─────────────────── */
+.code-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 9999;
+    display: flex; align-items: center; justify-content: center;
+}
+.code-panel {
+    background: #fff; border-radius: 16px; padding: 32px 28px;
+    width: 340px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    text-align: center;
+}
+
+/* ── Open Shift ───────────────────────────────────── */
+.screen-open-shift {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #f0f0f0;
+}
+.terminal-card {
+    border: 2px solid #198754; border-radius: 12px; background: #fff;
+    cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.terminal-card:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(0,0,0,0.12); }
+.terminal-card.disabled { opacity: 0.45; border-color: #6c757d; cursor: default; pointer-events: none; }
+
+/* ── POS Terminal ─────────────────────────────────── */
+.pos-terminal { display: flex; flex-direction: column; height: 100vh; }
+.pos-header {
+    background: #1a1a2e; color: #fff; padding: 8px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0; min-height: 52px;
+}
+.pos-header .store-name { font-weight: 700; font-size: 1.1rem; }
+.pos-header .terminal-badge {
+    background: #198754; color: #fff; padding: 2px 10px;
+    border-radius: 12px; font-size: 0.8rem; font-weight: 600; margin-left: 10px;
+}
+.pos-header .cashier-info { font-size: 0.9rem; opacity: 0.9; }
+.pos-main { display: flex; flex: 1; overflow: hidden; }
+
+/* Products side */
+.pos-products { width: 60%; display: flex; flex-direction: column; overflow: hidden; border-right: 2px solid #dee2e6; }
+.pos-categories {
+    display: flex; flex-wrap: wrap; gap: 6px; padding: 8px;
+    border-bottom: 1px solid #dee2e6; flex-shrink: 0;
+}
+.pos-categories .btn {
+    min-height: 38px; font-weight: 600; font-size: 0.85rem;
+    border-radius: 8px; padding: 4px 14px; border: none; color: #fff;
+}
+.pos-categories .btn.active { box-shadow: 0 0 0 3px rgba(0,0,0,0.3); }
+.pos-search {
+    padding: 8px; border-bottom: 1px solid #dee2e6; flex-shrink: 0;
+}
+.pos-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 8px; padding: 8px; overflow-y: auto; flex: 1;
+}
+.pos-product-card {
+    border: 2px solid #dee2e6; border-radius: 10px; padding: 8px;
+    text-align: center; cursor: pointer; transition: all 0.15s;
+    background: #fff; min-height: 90px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+}
+.pos-product-card:hover { border-color: #0d6efd; box-shadow: 0 2px 8px rgba(13,110,253,0.25); }
+.pos-product-card:active { transform: scale(0.96); background: #e8f0fe; }
+.pos-product-name {
+    font-size: 0.9rem; font-weight: 600; line-height: 1.3;
+    overflow: hidden; text-overflow: ellipsis;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+}
+.pos-product-price { font-size: 0.9rem; color: #198754; font-weight: 600; margin-top: 4px; }
+
+/* Cart side */
+.pos-cart { width: 40%; display: flex; flex-direction: column; background: #fff; }
+.pos-cart-header {
+    padding: 10px 12px; border-bottom: 1px solid #dee2e6;
+    font-weight: 700; font-size: 1.1rem; flex-shrink: 0;
+    display: flex; justify-content: space-between; align-items: center;
+}
+.pos-cart-items { flex: 1; overflow-y: auto; }
+.pos-cart-item { padding: 10px; border-bottom: 1px solid #f0f0f0; }
+.pos-cart-totals {
+    border-top: 2px solid #dee2e6; padding: 10px 12px; flex-shrink: 0;
+    background: #f8f9fa;
+}
+.pos-cart-actions {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+    padding: 8px; flex-shrink: 0;
+}
+.pos-cart-actions .btn { min-height: 60px; font-size: 1.3rem; font-weight: 700; border-radius: 10px; }
+.qty-btn {
+    width: 36px; height: 36px; padding: 0; font-size: 1.1rem;
+    font-weight: bold; border-radius: 50%; display: inline-flex;
+    align-items: center; justify-content: center;
+}
+.qty-display { font-weight: bold; font-size: 1.1rem; min-width: 24px; text-align: center; }
+.remove-btn { width: 30px; height: 30px; padding: 0; font-size: 1rem; border-radius: 50%; }
+
+/* Category colors */
+.cat-forest  { background: #2d6a4f !important; }
+.cat-amber   { background: #d97706 !important; }
+.cat-cyan    { background: #0891b2 !important; }
+.cat-indigo  { background: #4f46e5 !important; }
+.cat-all     { background: #343a40 !important; }
+
+/* Payment modal */
+.payment-entry {
+    padding: 10px; border: 1px solid #dee2e6; border-radius: 8px;
+    margin-bottom: 8px; background: #f8f9fa;
+}
+.payment-entry .method-label { font-weight: bold; text-transform: capitalize; }
+
+/* Discount toggle */
+.btn-outline-teal { color: #20c997; border-color: #20c997; }
+.btn-outline-teal:hover, .btn-teal { background: #20c997; color: #fff; border-color: #20c997; }
+.discount-strike { text-decoration: line-through; opacity: 0.6; }
+
+/* ── Shift Close / Report ─────────────────────────── */
+.screen-close, .screen-report {
+    min-height: 100vh; background: #f0f0f0;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 20px 20px 60px;
+}
+
+/* ── Receipt ──────────────────────────────────────── */
+.receipt-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 9998;
+    display: flex; align-items: center; justify-content: center;
+}
+.receipt-card {
+    background: #fff; border-radius: 12px; padding: 24px 20px;
+    width: 340px; max-width: 95vw; box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    text-align: center; font-family: 'Courier New', monospace; font-size: 0.85rem;
+}
+.receipt-card hr { border: 1px dashed #999; }
+
+/* ── Scrollbars ───────────────────────────────────── */
+.pos-grid::-webkit-scrollbar, .pos-cart-items::-webkit-scrollbar { width: 6px; }
+.pos-grid::-webkit-scrollbar-thumb, .pos-cart-items::-webkit-scrollbar-thumb { background: #c0c0c0; border-radius: 3px; }
+
+/* ── Touch ────────────────────────────────────────── */
+@media (pointer: coarse) {
+    .pos-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+    .pos-product-card { min-height: 80px; }
+    .btn { min-height: 44px; }
+    input, select, textarea { font-size: 16px !important; }
+    .staff-card { min-height: 140px; padding: 20px 12px; }
+}
+@media (max-width: 768px) {
+    .pos-products { width: 50%; }
+    .pos-cart { width: 50%; }
+}
+
+/* ── Misc ─────────────────────────────────────────── */
+.hidden { display: none !important; }
+.fade-in { animation: fadeIn 0.3s ease; }
+@keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════ -->
+<!-- TRAINING MODE BANNER (always visible after login) -->
+<!-- ══════════════════════════════════════════════════ -->
+<div class="training-banner hidden" id="trainingBanner">
+    <span>TRAINING MODE</span> &mdash; No real transactions will be processed
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<!-- SCREEN: PIN LOGIN                                 -->
+<!-- ══════════════════════════════════════════════════ -->
+<div id="screenLogin" class="screen-login">
+    <div class="login-card">
+        <h3>Granville Tea POS</h3>
+        <p class="text-muted mb-3">Training Mode</p>
+        <p class="text-muted small">Enter any 3-digit PIN</p>
+        <div class="pin-dots" id="loginDots">
+            <div class="pin-dot"></div>
+            <div class="pin-dot"></div>
+            <div class="pin-dot"></div>
+        </div>
+        <div class="pin-pad" id="loginPad">
+            <button class="btn-pin" data-key="1">1</button>
+            <button class="btn-pin" data-key="2">2</button>
+            <button class="btn-pin" data-key="3">3</button>
+            <button class="btn-pin" data-key="4">4</button>
+            <button class="btn-pin" data-key="5">5</button>
+            <button class="btn-pin" data-key="6">6</button>
+            <button class="btn-pin" data-key="7">7</button>
+            <button class="btn-pin" data-key="8">8</button>
+            <button class="btn-pin" data-key="9">9</button>
+            <button class="btn-pin action" data-key="clear">C</button>
+            <button class="btn-pin" data-key="0">0</button>
+            <button class="btn-pin action" data-key="back">&larr;</button>
+        </div>
+        <div id="loginMsg" class="mt-3 text-success fw-bold" style="min-height:24px"></div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<!-- SCREEN: OPEN SHIFT                                -->
+<!-- ══════════════════════════════════════════════════ -->
+<div id="screenOpenShift" class="screen-open-shift screen-with-banner hidden">
+    <div style="max-width:700px;width:100%;padding:0 16px">
+        <h3 class="text-center mb-4">Open Shift</h3>
+        <div class="row g-3" id="terminalCards"></div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<!-- SCREEN: STAFF PICKER                              -->
+<!-- ══════════════════════════════════════════════════ -->
+<div id="screenStaff" class="screen-staff screen-with-banner hidden">
+    <div class="staff-picker-header">
+        <h1>Granville Tea</h1>
+        <div class="shift-info" id="staffShiftInfo"></div>
+    </div>
+    <div class="staff-picker-prompt">Who's ringing in?</div>
+    <div class="staff-grid" id="staffGrid"></div>
+    <div class="staff-picker-footer">
+        <button class="btn btn-outline-light btn-sm" onclick="showScreen('screenOpenShift')">Back</button>
+    </div>
+</div>
+
+<!-- Staff PIN overlay -->
+<div class="code-overlay hidden" id="staffPinOverlay">
+    <div class="code-panel">
+        <h3 id="staffPinName"></h3>
+        <p class="text-muted">Enter your PIN</p>
+        <div class="pin-dots" id="staffPinDots">
+            <div class="pin-dot"></div>
+            <div class="pin-dot"></div>
+            <div class="pin-dot"></div>
+        </div>
+        <div class="pin-pad" id="staffPinPad">
+            <button class="btn-pin" data-key="1">1</button>
+            <button class="btn-pin" data-key="2">2</button>
+            <button class="btn-pin" data-key="3">3</button>
+            <button class="btn-pin" data-key="4">4</button>
+            <button class="btn-pin" data-key="5">5</button>
+            <button class="btn-pin" data-key="6">6</button>
+            <button class="btn-pin" data-key="7">7</button>
+            <button class="btn-pin" data-key="8">8</button>
+            <button class="btn-pin" data-key="9">9</button>
+            <button class="btn-pin action" data-key="clear">C</button>
+            <button class="btn-pin" data-key="0">0</button>
+            <button class="btn-pin action" data-key="back">&larr;</button>
+        </div>
+        <button class="btn btn-outline-secondary mt-3 w-100" onclick="closeStaffPin()">Cancel</button>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<!-- SCREEN: POS TERMINAL                              -->
+<!-- ══════════════════════════════════════════════════ -->
+<div id="screenTerminal" class="screen-with-banner hidden">
+    <div class="pos-terminal" style="padding-top:36px">
+        <!-- Header -->
+        <div class="pos-header">
+            <div class="d-flex align-items-center">
+                <span class="store-name">Granville Tea</span>
+                <span class="terminal-badge" id="termBadge"></span>
+            </div>
+            <div class="d-flex align-items-center gap-3">
+                <span class="cashier-info" id="termCashier"></span>
+                <button class="btn btn-sm btn-outline-light" onclick="switchUser()">Switch User</button>
+                <button class="btn btn-sm btn-outline-warning" onclick="startCloseShift()">End of Day</button>
+            </div>
+        </div>
+        <!-- Main -->
+        <div class="pos-main">
+            <!-- Products -->
+            <div class="pos-products">
+                <div class="pos-categories" id="categoryTabs"></div>
+                <div class="pos-search">
+                    <input type="text" class="form-control" id="productSearch" placeholder="Search products...">
+                </div>
+                <div class="pos-grid" id="productGrid"></div>
+            </div>
+            <!-- Cart -->
+            <div class="pos-cart">
+                <div class="pos-cart-header">
+                    <span>Current Sale</span>
+                    <span class="badge bg-secondary" id="cartCount">0</span>
+                </div>
+                <div class="pos-cart-items" id="cartItems">
+                    <div class="text-center text-muted py-5" id="cartEmpty">No items in cart</div>
+                </div>
+                <div class="pos-cart-totals" id="cartTotals">
+                    <div class="d-flex justify-content-between"><span>Subtotal</span><span id="cartSubtotal">$0.00</span></div>
+                    <div class="d-flex justify-content-between text-muted small"><span>GST (5%)</span><span id="cartGST">$0.00</span></div>
+                    <div class="d-flex justify-content-between text-muted small"><span>PST (7%)</span><span id="cartPST">$0.00</span></div>
+                    <div class="d-flex justify-content-between fw-bold fs-5 mt-1 pt-1 border-top"><span>Total</span><span id="cartTotal">$0.00</span></div>
+                </div>
+                <div class="pos-cart-actions">
+                    <button class="btn btn-outline-danger" onclick="clearCart()">Clear</button>
+                    <button class="btn btn-outline-secondary" id="btnDiscount" onclick="toggleDiscount()">10% Off</button>
+                    <button class="btn btn-outline-secondary" disabled style="opacity:0.4">Hold</button>
+                    <button class="btn btn-success" id="btnPay" onclick="openPayment()" disabled>Pay</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<!-- MODAL: Modifier Selection                         -->
+<!-- ══════════════════════════════════════════════════ -->
+<div class="modal fade" id="modifierModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="modifierTitle">Add Modifiers</h5>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted">Select any modifiers (optional):</p>
+                <div id="modifierList" class="d-flex flex-column gap-2"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal" onclick="addProductToCart(pendingProduct, [])">No Modifiers</button>
+                <button class="btn btn-primary" onclick="applyModifiers()">Add to Cart</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<!-- MODAL: Payment                                    -->
+<!-- ══════════════════════════════════════════════════ -->
+<div class="modal fade" id="paymentModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">Payment</h5>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <!-- Left -->
+                    <div class="col-md-6">
+                        <h4 class="mb-3">Amount Due: <span id="modalTotal" class="text-success">$0.00</span></h4>
+                        <h5>Remaining: <span id="modalRemaining" class="text-danger">$0.00</span></h5>
+                        <div id="paymentEntries" class="mt-3"></div>
+                        <div class="mt-3">
+                            <label class="form-label fw-bold">Add Payment</label>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <button class="btn btn-outline-success btn-lg" onclick="addPaymentMethod('cash')">Cash</button>
+                                <button class="btn btn-outline-primary btn-lg" onclick="addPaymentMethod('card')">Card</button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Right -->
+                    <div class="col-md-6">
+                        <div id="quickCashPanel" class="hidden">
+                            <label class="form-label fw-bold">Quick Cash</label>
+                            <div class="d-flex gap-2 flex-wrap mb-3" id="quickCashBtns"></div>
+                            <div class="mb-3">
+                                <label class="form-label">Custom Amount</label>
+                                <input type="number" class="form-control form-control-lg" id="customCashAmount" step="0.01" min="0" inputmode="decimal">
+                                <button class="btn btn-success mt-2 w-100" onclick="applyCustomCash()">Apply</button>
+                            </div>
+                        </div>
+                        <div id="cardPanel" class="hidden">
+                            <div class="text-center py-4">
+                                <div class="spinner-border text-primary mb-3" id="cardSpinner"></div>
+                                <p class="fw-bold" id="cardStatus">Processing card...</p>
+                                <p class="text-muted small">Simulated — no real card needed</p>
+                            </div>
+                        </div>
+                        <div id="changeDisplay" class="mt-3 hidden">
+                            <div class="alert alert-success fs-3 text-center">
+                                Change: <strong id="changeAmount">$0.00</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="cancelPayment()">Cancel</button>
+                <button class="btn btn-success btn-lg" id="completeSaleBtn" onclick="completeSale()" disabled>Complete Sale</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<!-- RECEIPT OVERLAY                                   -->
+<!-- ══════════════════════════════════════════════════ -->
+<div class="receipt-overlay hidden" id="receiptOverlay">
+    <div class="receipt-card" id="receiptContent"></div>
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<!-- SCREEN: SHIFT CLOSE                               -->
+<!-- ══════════════════════════════════════════════════ -->
+<div id="screenClose" class="screen-close screen-with-banner hidden">
+    <div style="max-width:600px;width:100%">
+        <div class="card shadow fade-in">
+            <div class="card-body p-4">
+                <h3 class="text-center mb-4">End of Day</h3>
+                <div class="row mb-4">
+                    <div class="col-6">
+                        <div class="card bg-light"><div class="card-body text-center">
+                            <small class="text-muted">Transactions</small>
+                            <div class="fs-3" id="closeTxCount">0</div>
+                        </div></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="card bg-light"><div class="card-body text-center">
+                            <small class="text-muted">Total Sales</small>
+                            <div class="fs-3" id="closeTotalSales">$0.00</div>
+                        </div></div>
+                    </div>
+                </div>
+                <h5>Payment Summary</h5>
+                <table class="table table-sm mb-4" id="closePaymentTable">
+                    <tbody></tbody>
+                </table>
+                <div class="mb-3">
+                    <label class="form-label fs-5">Closing Cash Count ($)</label>
+                    <input type="number" class="form-control form-control-lg text-center" id="closingCash" step="0.01" min="0" inputmode="decimal" placeholder="0.00">
+                    <div class="mt-1 text-success fw-bold" style="font-size:0.95rem" id="hintCash"></div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fs-5">Cash Deposit ($)</label>
+                    <input type="number" class="form-control form-control-lg text-center" id="closingDeposit" step="0.01" min="0" inputmode="decimal" placeholder="0.00">
+                    <div class="mt-1 text-success fw-bold" style="font-size:0.95rem" id="hintDeposit"></div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fs-5">Card Batch Total ($)</label>
+                    <input type="number" class="form-control form-control-lg text-center" id="closingCard" step="0.01" min="0" inputmode="decimal" placeholder="0.00">
+                    <div class="mt-1 text-success fw-bold" style="font-size:0.95rem" id="hintCard"></div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fs-5">Tips ($)</label>
+                    <input type="number" class="form-control form-control-lg text-center" id="closingTips" step="0.01" min="0" inputmode="decimal" placeholder="0.00" value="0.00">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Notes</label>
+                    <textarea class="form-control" id="closingNotes" rows="2" placeholder="Any notes about the shift..."></textarea>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-secondary flex-fill" onclick="cancelClose()">Cancel</button>
+                    <button class="btn btn-warning btn-lg flex-fill" onclick="submitClose()">End of Day</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<!-- SCREEN: SHIFT REPORT                              -->
+<!-- ══════════════════════════════════════════════════ -->
+<div id="screenReport" class="screen-report screen-with-banner hidden">
+    <div style="max-width:700px;width:100%">
+        <div class="card shadow fade-in">
+            <div class="card-body p-4" id="reportContent"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+// ══════════════════════════════════════════════════════
+// DATA
+// ══════════════════════════════════════════════════════
+
+const STAFF = [
+    { id: 1, name: 'Mark M.', initials: 'MM', role: 'Manager' },
+    { id: 2, name: 'Sarah L.', initials: 'SL', role: 'Staff' },
+    { id: 3, name: 'James K.', initials: 'JK', role: 'Staff' },
+    { id: 4, name: 'Emily R.', initials: 'ER', role: 'Staff' },
+    { id: 5, name: 'Alex T.', initials: 'AT', role: 'Staff' },
+    { id: 6, name: 'Mia C.', initials: 'MC', role: 'Staff' },
+];
+
+const TERMINALS = [
+    { id: 1, name: 'Loose Tea' },
+    { id: 2, name: 'Tea Bar' },
+];
+
+const CATEGORIES = [
+    { id: 'all', name: 'All', css: 'cat-all' },
+    { id: 'loose', name: 'Loose Tea', css: 'cat-forest' },
+    { id: 'accessories', name: 'Accessories', css: 'cat-amber' },
+    { id: 'beverages', name: 'Beverages', css: 'cat-cyan' },
+    { id: 'wholesale', name: 'Wholesale', css: 'cat-indigo' },
+];
+
+const PRODUCTS = [
+    // Loose Tea — food: GST only, no PST
+    { id: 1,  name: 'Earl Grey',          price: 12.00, cat: 'loose',       taxPST: false, hasMods: false },
+    { id: 2,  name: 'Jasmine Green',      price: 14.00, cat: 'loose',       taxPST: false, hasMods: false },
+    { id: 3,  name: 'English Breakfast',   price: 11.00, cat: 'loose',       taxPST: false, hasMods: false },
+    { id: 4,  name: 'Chai',               price: 13.00, cat: 'loose',       taxPST: false, hasMods: false },
+    { id: 5,  name: 'Chamomile',          price: 10.00, cat: 'loose',       taxPST: false, hasMods: false },
+    { id: 6,  name: 'Peppermint',         price: 10.00, cat: 'loose',       taxPST: false, hasMods: false },
+    // Accessories — GST + PST
+    { id: 7,  name: 'Infuser',            price: 8.00,  cat: 'accessories', taxPST: true,  hasMods: false },
+    { id: 8,  name: 'Travel Mug',         price: 22.00, cat: 'accessories', taxPST: true,  hasMods: false },
+    { id: 9,  name: 'Teapot',             price: 35.00, cat: 'accessories', taxPST: true,  hasMods: false },
+    { id: 10, name: 'Tea Tin',            price: 6.00,  cat: 'accessories', taxPST: true,  hasMods: false },
+    // Beverages — GST + PST, has modifiers
+    { id: 11, name: 'Chai Latte',         price: 5.50,  cat: 'beverages',   taxPST: true,  hasMods: true },
+    { id: 12, name: 'Matcha Latte',       price: 6.00,  cat: 'beverages',   taxPST: true,  hasMods: true },
+    { id: 13, name: 'Iced Tea',           price: 4.50,  cat: 'beverages',   taxPST: true,  hasMods: true },
+    { id: 14, name: 'London Fog',         price: 5.75,  cat: 'beverages',   taxPST: true,  hasMods: true },
+    { id: 15, name: 'Hot Chocolate',      price: 5.00,  cat: 'beverages',   taxPST: true,  hasMods: true },
+    // Wholesale — GST only (food)
+    { id: 16, name: 'Bulk Earl Grey 500g',        price: 45.00, cat: 'wholesale', taxPST: false, hasMods: false },
+    { id: 17, name: 'Bulk English Breakfast 500g', price: 42.00, cat: 'wholesale', taxPST: false, hasMods: false },
+];
+
+const MODIFIERS = [
+    { id: 1, name: 'Oat Milk',     price: 0.75 },
+    { id: 2, name: 'Almond Milk',  price: 0.50 },
+    { id: 3, name: 'Extra Shot',   price: 1.00 },
+    { id: 4, name: 'Vanilla',      price: 0.50 },
+];
+
+const GST_RATE = 0.05;
+const PST_RATE = 0.07;
+
+// ══════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════
+
+let state = {
+    manager: 'Mark M.',
+    terminal: null,
+    cashier: null,
+    openingFloat: 200,
+    shiftStart: null,
+    cart: [],           // { product, qty, mods:[], lineTotal, lineGST, linePST }
+    discount: false,    // 10% off
+    transactions: [],   // completed sales
+    payments: [],       // current payment entries
+    currentScreen: 'screenLogin',
+};
+
+// ══════════════════════════════════════════════════════
+// SCREEN MANAGEMENT
+// ══════════════════════════════════════════════════════
+
+function showScreen(id) {
+    document.querySelectorAll('[id^="screen"]').forEach(s => s.classList.add('hidden'));
+    document.getElementById(id).classList.remove('hidden');
+    state.currentScreen = id;
+    // Show training banner on all screens except login
+    document.getElementById('trainingBanner').classList.toggle('hidden', id === 'screenLogin');
+    // Allow scrolling on close/report screens
+    const scrollable = id === 'screenClose' || id === 'screenReport';
+    document.body.classList.toggle('scroll-ok', scrollable);
+    if (scrollable) window.scrollTo(0, 0);
+}
+
+// ══════════════════════════════════════════════════════
+// PIN LOGIN
+// ══════════════════════════════════════════════════════
+
+let loginPin = '';
+
+document.getElementById('loginPad').addEventListener('click', e => {
+    const btn = e.target.closest('[data-key]');
+    if (!btn) return;
+    const key = btn.dataset.key;
+
+    if (key === 'clear') { loginPin = ''; }
+    else if (key === 'back') { loginPin = loginPin.slice(0, -1); }
+    else if (loginPin.length < 3) { loginPin += key; }
+
+    updateDots('loginDots', loginPin, 3);
+
+    if (loginPin.length === 3) {
+        document.getElementById('loginMsg').textContent = 'Welcome, ' + state.manager + '!';
+        setTimeout(() => {
+            document.getElementById('loginMsg').textContent = '';
+            loginPin = '';
+            updateDots('loginDots', '', 3);
+            buildOpenShift();
+            showScreen('screenOpenShift');
+        }, 800);
+    }
+});
+
+function updateDots(containerId, pin, count) {
+    const dots = document.getElementById(containerId).querySelectorAll('.pin-dot');
+    for (let i = 0; i < count; i++) {
+        dots[i].classList.toggle('filled', i < pin.length);
+    }
+}
+
+// ══════════════════════════════════════════════════════
+// OPEN SHIFT
+// ══════════════════════════════════════════════════════
+
+function buildOpenShift() {
+    const container = document.getElementById('terminalCards');
+    container.innerHTML = '';
+    TERMINALS.forEach(t => {
+        const col = document.createElement('div');
+        col.className = 'col-6 col-md-4';
+        col.innerHTML = `
+            <div class="terminal-card p-4 text-center" onclick="selectTerminal(${t.id})">
+                <h4 class="mb-3">${t.name}</h4>
+                <span class="badge bg-success mb-3">Available</span>
+                <div class="shift-form hidden" id="shiftForm${t.id}">
+                    <h5 class="mt-3 mb-2">Add Float</h5>
+                    <div class="mb-2">
+                        <div class="input-group input-group-lg">
+                            <span class="input-group-text fw-bold">$</span>
+                            <input type="number" class="form-control form-control-lg text-center fw-bold"
+                                   id="float${t.id}" value="200.00" step="0.01" min="0" inputmode="decimal"
+                                   style="font-size:1.4rem">
+                        </div>
+                        <div class="form-text">Count the cash in the drawer</div>
+                    </div>
+                    <button class="btn btn-success btn-lg w-100 mt-2" onclick="event.stopPropagation(); startShift(${t.id})">
+                        Start Shift
+                    </button>
+                </div>
+            </div>`;
+        container.appendChild(col);
+    });
+}
+
+function selectTerminal(id) {
+    // Hide all forms, show selected
+    TERMINALS.forEach(t => {
+        const form = document.getElementById('shiftForm' + t.id);
+        if (form) form.classList.toggle('hidden', t.id !== id);
+    });
+}
+
+function startShift(termId) {
+    const terminal = TERMINALS.find(t => t.id === termId);
+    const floatInput = document.getElementById('float' + termId);
+    state.terminal = terminal;
+    state.openingFloat = parseFloat(floatInput.value) || 200;
+    state.shiftStart = new Date();
+    state.transactions = [];
+    buildStaffPicker();
+    showScreen('screenStaff');
+}
+
+// ══════════════════════════════════════════════════════
+// STAFF PICKER
+// ══════════════════════════════════════════════════════
+
+function buildStaffPicker() {
+    document.getElementById('staffShiftInfo').textContent =
+        `${state.terminal.name} — Opened by ${state.manager}`;
+
+    const grid = document.getElementById('staffGrid');
+    grid.innerHTML = '';
+    STAFF.forEach(s => {
+        const card = document.createElement('div');
+        card.className = 'staff-card';
+        card.innerHTML = `
+            <div class="staff-avatar">${s.initials}</div>
+            <div class="staff-name">${s.name}</div>
+            <div class="staff-role">${s.role}</div>`;
+        card.addEventListener('click', () => selectStaff(s));
+        grid.appendChild(card);
+    });
+}
+
+let staffPin = '';
+let pendingStaff = null;
+
+function selectStaff(staff) {
+    pendingStaff = staff;
+    staffPin = '';
+    updateDots('staffPinDots', '', 3);
+    document.getElementById('staffPinName').textContent = staff.name;
+    document.getElementById('staffPinOverlay').classList.remove('hidden');
+}
+
+document.getElementById('staffPinPad').addEventListener('click', e => {
+    const btn = e.target.closest('[data-key]');
+    if (!btn) return;
+    const key = btn.dataset.key;
+
+    if (key === 'clear') { staffPin = ''; }
+    else if (key === 'back') { staffPin = staffPin.slice(0, -1); }
+    else if (staffPin.length < 3) { staffPin += key; }
+
+    updateDots('staffPinDots', staffPin, 3);
+
+    if (staffPin.length === 3) {
+        state.cashier = pendingStaff;
+        closeStaffPin();
+        enterTerminal();
+    }
+});
+
+function closeStaffPin() {
+    document.getElementById('staffPinOverlay').classList.add('hidden');
+    staffPin = '';
+    pendingStaff = null;
+}
+
+function switchUser() {
+    state.cashier = null;
+    state.cart = [];
+    state.discount = false;
+    buildStaffPicker();
+    showScreen('screenStaff');
+}
+
+// ══════════════════════════════════════════════════════
+// SEED TEST TRANSACTIONS
+// ══════════════════════════════════════════════════════
+
+function seedTransactions() {
+    const cashiers = ['Sarah L.', 'James K.', 'Emily R.', 'Mark M.', 'Sarah L.', 'James K.'];
+    const now = new Date();
+
+    // Helper: build a transaction from product IDs + optional modifier IDs
+    function makeTx(id, minutesAgo, cashier, items, payMethod, payAmount, disc) {
+        const time = new Date(now.getTime() - minutesAgo * 60000);
+        state.discount = disc || false;
+
+        const cartItems = items.map(([prodId, qty, modIds]) => ({
+            product: PRODUCTS.find(p => p.id === prodId),
+            qty,
+            mods: (modIds || []).map(mid => MODIFIERS.find(m => m.id === mid)),
+        }));
+
+        let subtotal = 0, gst = 0, pst = 0;
+        const txItems = cartItems.map(item => {
+            const modTotal = item.mods.reduce((s, m) => s + m.price, 0);
+            const unitPrice = item.product.price + modTotal;
+            let sub = unitPrice * item.qty;
+            if (disc) sub *= 0.9;
+            const g = +(sub * GST_RATE).toFixed(2);
+            const p = item.product.taxPST ? +(sub * PST_RATE).toFixed(2) : 0;
+            subtotal += sub; gst += g; pst += p;
+            return { name: item.product.name, qty: item.qty, mods: item.mods.map(m => m.name),
+                     unitPrice, subtotal: +sub.toFixed(2), gst: g, pst: p, total: +(sub + g + p).toFixed(2) };
+        });
+
+        subtotal = +subtotal.toFixed(2);
+        gst = +gst.toFixed(2);
+        pst = +pst.toFixed(2);
+        const total = +(subtotal + gst + pst).toFixed(2);
+        const change = payMethod === 'cash' ? Math.max(0, +(payAmount - total).toFixed(2)) : 0;
+
+        return {
+            id, time, cashier,
+            items: txItems, subtotal, gst, pst, total,
+            payments: [{ method: payMethod, amount: payMethod === 'card' ? total : payAmount }],
+            change, discount: disc || false,
+        };
+    }
+
+    state.transactions = [
+        // Tx 1: Earl Grey + Chamomile loose tea (cash $25)
+        makeTx(1, 180, 'Sarah L.', [[1,1,[]],[5,1,[]]], 'cash', 25),
+        // Tx 2: Chai Latte w/ oat milk + London Fog (card)
+        makeTx(2, 155, 'James K.', [[11,1,[1]],[14,1,[]]], 'card', 0),
+        // Tx 3: Travel Mug (cash $30)
+        makeTx(3, 130, 'Emily R.', [[8,1,[]]], 'cash', 30),
+        // Tx 4: 2x Matcha Latte w/ almond milk + Hot Chocolate (card)
+        makeTx(4, 110, 'Sarah L.', [[12,2,[2]],[15,1,[]]], 'card', 0),
+        // Tx 5: English Breakfast + Infuser (cash $25)
+        makeTx(5, 90, 'Mark M.', [[3,1,[]],[7,1,[]]], 'cash', 25),
+        // Tx 6: 3x Iced Tea (card)
+        makeTx(6, 75, 'James K.', [[13,3,[]]], 'card', 0),
+        // Tx 7: Teapot + Tea Tin — 10% discount (cash $50)
+        makeTx(7, 55, 'Emily R.', [[9,1,[]],[10,1,[]]], 'cash', 50, true),
+        // Tx 8: Chai + Peppermint loose tea (cash $25)
+        makeTx(8, 40, 'Sarah L.', [[4,1,[]],[6,1,[]]], 'cash', 25),
+        // Tx 9: London Fog w/ vanilla + extra shot (card)
+        makeTx(9, 25, 'James K.', [[14,1,[4,3]]], 'card', 0),
+        // Tx 10: Bulk Earl Grey 500g (cash $50)
+        makeTx(10, 10, 'Mark M.', [[16,1,[]]], 'cash', 50),
+    ];
+
+    state.discount = false;
+}
+
+// ══════════════════════════════════════════════════════
+// POS TERMINAL
+// ══════════════════════════════════════════════════════
+
+let activeCategory = 'all';
+let pendingProduct = null;
+
+function enterTerminal() {
+    document.getElementById('termBadge').textContent = state.terminal.name;
+    document.getElementById('termCashier').textContent = state.cashier.name;
+    buildCategories();
+    buildProducts();
+    clearCart();
+    // Seed 10 sample transactions so staff can practice closing
+    if (state.transactions.length === 0) seedTransactions();
+    showScreen('screenTerminal');
+}
+
+function buildCategories() {
+    const tabs = document.getElementById('categoryTabs');
+    tabs.innerHTML = '';
+    CATEGORIES.forEach(c => {
+        const btn = document.createElement('button');
+        btn.className = `btn ${c.css}${c.id === activeCategory ? ' active' : ''}`;
+        btn.textContent = c.name;
+        btn.addEventListener('click', () => {
+            activeCategory = c.id;
+            buildCategories();
+            buildProducts();
+        });
+        tabs.appendChild(btn);
+    });
+}
+
+function buildProducts(filter = '') {
+    const grid = document.getElementById('productGrid');
+    grid.innerHTML = '';
+    const searchTerm = document.getElementById('productSearch').value.toLowerCase();
+
+    PRODUCTS.forEach(p => {
+        if (activeCategory !== 'all' && p.cat !== activeCategory) return;
+        if (searchTerm && !p.name.toLowerCase().includes(searchTerm)) return;
+
+        const card = document.createElement('div');
+        card.className = 'pos-product-card';
+        card.innerHTML = `
+            <div class="pos-product-name">${p.name}</div>
+            <div class="pos-product-price">$${p.price.toFixed(2)}</div>`;
+        card.addEventListener('click', () => onProductClick(p));
+        grid.appendChild(card);
+    });
+}
+
+document.getElementById('productSearch').addEventListener('input', () => buildProducts());
+
+function onProductClick(product) {
+    if (product.hasMods) {
+        pendingProduct = product;
+        showModifierModal(product);
+    } else {
+        addProductToCart(product, []);
+    }
+}
+
+// ══════════════════════════════════════════════════════
+// MODIFIER MODAL
+// ══════════════════════════════════════════════════════
+
+function showModifierModal(product) {
+    document.getElementById('modifierTitle').textContent = product.name + ' — Modifiers';
+    const list = document.getElementById('modifierList');
+    list.innerHTML = '';
+    MODIFIERS.forEach(m => {
+        const div = document.createElement('div');
+        div.className = 'form-check form-check-lg';
+        div.innerHTML = `
+            <input class="form-check-input" type="checkbox" id="mod${m.id}" value="${m.id}" style="width:24px;height:24px">
+            <label class="form-check-label fs-5 ms-2" for="mod${m.id}">
+                ${m.name} <span class="text-muted">+$${m.price.toFixed(2)}</span>
+            </label>`;
+        list.appendChild(div);
+    });
+    new bootstrap.Modal(document.getElementById('modifierModal')).show();
+}
+
+function applyModifiers() {
+    const checks = document.querySelectorAll('#modifierList input:checked');
+    const mods = Array.from(checks).map(c => MODIFIERS.find(m => m.id == c.value));
+    addProductToCart(pendingProduct, mods);
+    bootstrap.Modal.getInstance(document.getElementById('modifierModal')).hide();
+    pendingProduct = null;
+}
+
+// ══════════════════════════════════════════════════════
+// CART
+// ══════════════════════════════════════════════════════
+
+function addProductToCart(product, mods) {
+    // Check if same product + same modifiers already in cart
+    const modKey = mods.map(m => m.id).sort().join(',');
+    const existing = state.cart.find(item =>
+        item.product.id === product.id &&
+        item.mods.map(m => m.id).sort().join(',') === modKey
+    );
+
+    if (existing) {
+        existing.qty++;
+    } else {
+        state.cart.push({ product, qty: 1, mods: [...mods] });
+    }
+    renderCart();
+}
+
+function removeFromCart(index) {
+    state.cart.splice(index, 1);
+    renderCart();
+}
+
+function changeQty(index, delta) {
+    state.cart[index].qty += delta;
+    if (state.cart[index].qty <= 0) state.cart.splice(index, 1);
+    renderCart();
+}
+
+function clearCart() {
+    state.cart = [];
+    state.discount = false;
+    document.getElementById('btnDiscount').classList.remove('btn-teal');
+    document.getElementById('btnDiscount').classList.add('btn-outline-secondary');
+    renderCart();
+}
+
+function toggleDiscount() {
+    state.discount = !state.discount;
+    const btn = document.getElementById('btnDiscount');
+    btn.classList.toggle('btn-teal', state.discount);
+    btn.classList.toggle('btn-outline-secondary', !state.discount);
+    btn.textContent = state.discount ? '10% Off ✓' : '10% Off';
+    renderCart();
+}
+
+function calcLine(item) {
+    const modTotal = item.mods.reduce((s, m) => s + m.price, 0);
+    const unitPrice = item.product.price + modTotal;
+    let subtotal = unitPrice * item.qty;
+    if (state.discount) subtotal *= 0.9;
+    const gst = +(subtotal * GST_RATE).toFixed(2);
+    const pst = item.product.taxPST ? +(subtotal * PST_RATE).toFixed(2) : 0;
+    return { unitPrice, subtotal, gst, pst, total: +(subtotal + gst + pst).toFixed(2) };
+}
+
+function calcCartTotals() {
+    let subtotal = 0, gst = 0, pst = 0;
+    state.cart.forEach(item => {
+        const c = calcLine(item);
+        subtotal += c.subtotal;
+        gst += c.gst;
+        pst += c.pst;
+    });
+    return {
+        subtotal: +subtotal.toFixed(2),
+        gst: +gst.toFixed(2),
+        pst: +pst.toFixed(2),
+        total: +(subtotal + gst + pst).toFixed(2)
+    };
+}
+
+function renderCart() {
+    const container = document.getElementById('cartItems');
+    const empty = document.getElementById('cartEmpty');
+
+    if (state.cart.length === 0) {
+        container.innerHTML = '<div class="text-center text-muted py-5" id="cartEmpty">No items in cart</div>';
+        document.getElementById('cartCount').textContent = '0';
+        document.getElementById('cartSubtotal').textContent = '$0.00';
+        document.getElementById('cartGST').textContent = '$0.00';
+        document.getElementById('cartPST').textContent = '$0.00';
+        document.getElementById('cartTotal').textContent = '$0.00';
+        document.getElementById('btnPay').disabled = true;
+        return;
+    }
+
+    let html = '';
+    state.cart.forEach((item, i) => {
+        const c = calcLine(item);
+        const modText = item.mods.length
+            ? item.mods.map(m => `<div class="text-muted small ms-2">+ ${m.name} ($${m.price.toFixed(2)})</div>`).join('')
+            : '';
+        const discountLabel = state.discount
+            ? `<span class="discount-strike">$${(item.product.price + item.mods.reduce((s,m)=>s+m.price,0)).toFixed(2)}</span> $${(c.unitPrice * (state.discount ? 0.9 : 1)).toFixed(2)}`
+            : `$${c.unitPrice.toFixed(2)}`;
+
+        html += `
+        <div class="pos-cart-item">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="flex-grow-1">
+                    <div class="fw-bold">${item.product.name}</div>
+                    ${modText}
+                    <div class="d-flex align-items-center gap-2 mt-1">
+                        <button class="btn btn-sm btn-outline-secondary qty-btn" onclick="changeQty(${i},-1)">&minus;</button>
+                        <span class="qty-display">${item.qty}</span>
+                        <button class="btn btn-sm btn-outline-secondary qty-btn" onclick="changeQty(${i},1)">+</button>
+                        <span class="text-muted ms-2">&times; ${discountLabel}</span>
+                    </div>
+                    <small class="text-muted">GST: $${c.gst.toFixed(2)}</small>
+                    ${c.pst > 0 ? `<small class="text-muted ms-2">PST: $${c.pst.toFixed(2)}</small>` : ''}
+                </div>
+                <div class="text-end">
+                    <div class="fw-bold">$${c.total.toFixed(2)}</div>
+                    <button class="btn btn-sm btn-outline-danger mt-1 remove-btn" onclick="removeFromCart(${i})">&times;</button>
+                </div>
+            </div>
+        </div>`;
+    });
+
+    container.innerHTML = html;
+
+    const totals = calcCartTotals();
+    const totalItems = state.cart.reduce((s, item) => s + item.qty, 0);
+    document.getElementById('cartCount').textContent = totalItems;
+    document.getElementById('cartSubtotal').textContent = '$' + totals.subtotal.toFixed(2);
+    document.getElementById('cartGST').textContent = '$' + totals.gst.toFixed(2);
+    document.getElementById('cartPST').textContent = '$' + totals.pst.toFixed(2);
+    document.getElementById('cartTotal').textContent = '$' + totals.total.toFixed(2);
+    document.getElementById('btnPay').disabled = false;
+}
+
+// ══════════════════════════════════════════════════════
+// PAYMENT
+// ══════════════════════════════════════════════════════
+
+function openPayment() {
+    const totals = calcCartTotals();
+    state.payments = [];
+    document.getElementById('modalTotal').textContent = '$' + totals.total.toFixed(2);
+    document.getElementById('paymentEntries').innerHTML = '';
+    document.getElementById('quickCashPanel').classList.add('hidden');
+    document.getElementById('cardPanel').classList.add('hidden');
+    document.getElementById('changeDisplay').classList.add('hidden');
+    document.getElementById('completeSaleBtn').disabled = true;
+    updateRemaining();
+    buildQuickCash(totals.total);
+    new bootstrap.Modal(document.getElementById('paymentModal')).show();
+}
+
+function buildQuickCash(total) {
+    const container = document.getElementById('quickCashBtns');
+    container.innerHTML = '';
+    // Round up to common bills
+    const amounts = [5, 10, 20, 50, 100].filter(a => a >= total);
+    if (!amounts.includes(Math.ceil(total))) amounts.unshift(Math.ceil(total));
+    // Always include exact amount
+    amounts.unshift(total);
+    const unique = [...new Set(amounts)].sort((a, b) => a - b).slice(0, 6);
+
+    unique.forEach(a => {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-outline-success btn-lg';
+        btn.textContent = '$' + a.toFixed(2);
+        btn.addEventListener('click', () => applyCashPayment(a));
+        container.appendChild(btn);
+    });
+}
+
+function addPaymentMethod(method) {
+    if (method === 'cash') {
+        document.getElementById('quickCashPanel').classList.remove('hidden');
+        document.getElementById('cardPanel').classList.add('hidden');
+        document.getElementById('customCashAmount').value = '';
+        document.getElementById('customCashAmount').focus();
+    } else if (method === 'card') {
+        document.getElementById('quickCashPanel').classList.add('hidden');
+        document.getElementById('cardPanel').classList.remove('hidden');
+        document.getElementById('cardStatus').textContent = 'Processing card...';
+        document.getElementById('cardSpinner').style.display = '';
+        // Simulate card approval
+        setTimeout(() => {
+            const remaining = getRemaining();
+            if (remaining <= 0) {
+                document.getElementById('cardStatus').textContent = 'No amount remaining';
+                document.getElementById('cardSpinner').style.display = 'none';
+                return;
+            }
+            state.payments.push({ method: 'card', amount: remaining });
+            document.getElementById('cardSpinner').style.display = 'none';
+            document.getElementById('cardStatus').textContent = 'Approved ✓';
+            renderPaymentEntries();
+            updateRemaining();
+        }, 1500);
+    }
+}
+
+function applyCashPayment(amount) {
+    state.payments.push({ method: 'cash', amount });
+    document.getElementById('quickCashPanel').classList.add('hidden');
+    renderPaymentEntries();
+    updateRemaining();
+}
+
+function applyCustomCash() {
+    const val = parseFloat(document.getElementById('customCashAmount').value);
+    if (!val || val <= 0) return;
+    applyCashPayment(val);
+}
+
+function getRemaining() {
+    const totals = calcCartTotals();
+    const paid = state.payments.reduce((s, p) => s + p.amount, 0);
+    return +(totals.total - paid).toFixed(2);
+}
+
+function updateRemaining() {
+    const remaining = getRemaining();
+    const el = document.getElementById('modalRemaining');
+    const changeEl = document.getElementById('changeDisplay');
+    const completeBtn = document.getElementById('completeSaleBtn');
+
+    if (remaining <= 0) {
+        el.textContent = '$0.00';
+        el.classList.remove('text-danger');
+        el.classList.add('text-success');
+        completeBtn.disabled = false;
+
+        if (remaining < 0) {
+            const change = Math.abs(remaining);
+            document.getElementById('changeAmount').textContent = '$' + change.toFixed(2);
+            changeEl.classList.remove('hidden');
+        }
+    } else {
+        el.textContent = '$' + remaining.toFixed(2);
+        el.classList.add('text-danger');
+        el.classList.remove('text-success');
+        completeBtn.disabled = true;
+        changeEl.classList.add('hidden');
+    }
+}
+
+function renderPaymentEntries() {
+    const container = document.getElementById('paymentEntries');
+    container.innerHTML = '';
+    state.payments.forEach((p, i) => {
+        container.innerHTML += `
+            <div class="payment-entry">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="method-label">${p.method}</div>
+                        <div class="text-muted small">$${p.amount.toFixed(2)}</div>
+                    </div>
+                    <button class="btn btn-sm btn-outline-danger" onclick="removePayment(${i})">Remove</button>
+                </div>
+            </div>`;
+    });
+}
+
+function removePayment(index) {
+    state.payments.splice(index, 1);
+    renderPaymentEntries();
+    updateRemaining();
+}
+
+function cancelPayment() {
+    state.payments = [];
+    bootstrap.Modal.getInstance(document.getElementById('paymentModal')).hide();
+}
+
+function completeSale() {
+    const totals = calcCartTotals();
+    const paid = state.payments.reduce((s, p) => s + p.amount, 0);
+    const change = Math.max(0, +(paid - totals.total).toFixed(2));
+
+    const tx = {
+        id: state.transactions.length + 1,
+        time: new Date(),
+        cashier: state.cashier.name,
+        items: state.cart.map(item => ({
+            name: item.product.name,
+            qty: item.qty,
+            mods: item.mods.map(m => m.name),
+            ...calcLine(item)
+        })),
+        subtotal: totals.subtotal,
+        gst: totals.gst,
+        pst: totals.pst,
+        total: totals.total,
+        payments: [...state.payments],
+        change,
+        discount: state.discount,
+    };
+
+    state.transactions.push(tx);
+
+    // Close payment modal
+    bootstrap.Modal.getInstance(document.getElementById('paymentModal')).hide();
+
+    // Show receipt
+    showReceipt(tx);
+
+    // Clear cart
+    state.cart = [];
+    state.discount = false;
+    document.getElementById('btnDiscount').classList.remove('btn-teal');
+    document.getElementById('btnDiscount').classList.add('btn-outline-secondary');
+    document.getElementById('btnDiscount').textContent = '10% Off';
+    renderCart();
+}
+
+// ══════════════════════════════════════════════════════
+// RECEIPT
+// ══════════════════════════════════════════════════════
+
+function showReceipt(tx) {
+    const overlay = document.getElementById('receiptOverlay');
+    const content = document.getElementById('receiptContent');
+
+    const timeStr = tx.time.toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' });
+    const dateStr = tx.time.toLocaleDateString('en-CA');
+
+    let itemLines = '';
+    tx.items.forEach(item => {
+        const modStr = item.mods.length ? '<br>&nbsp;&nbsp;+ ' + item.mods.join(', ') : '';
+        itemLines += `<div class="d-flex justify-content-between">
+            <span>${item.qty}x ${item.name}${modStr}</span>
+            <span>$${item.total.toFixed(2)}</span>
+        </div>`;
+    });
+
+    let payLines = '';
+    tx.payments.forEach(p => {
+        payLines += `<div class="d-flex justify-content-between">
+            <span>${p.method.toUpperCase()}</span><span>$${p.amount.toFixed(2)}</span>
+        </div>`;
+    });
+
+    content.innerHTML = `
+        <h5 class="mb-1">Granville Tea</h5>
+        <div class="text-muted small mb-2">${state.terminal.name} &bull; ${dateStr} ${timeStr}</div>
+        <div class="text-muted small mb-2">Cashier: ${tx.cashier}</div>
+        <div class="text-muted small mb-3">Transaction #${tx.id}</div>
+        <hr>
+        ${itemLines}
+        <hr>
+        <div class="d-flex justify-content-between"><span>Subtotal</span><span>$${tx.subtotal.toFixed(2)}</span></div>
+        ${tx.discount ? '<div class="text-muted small">10% discount applied</div>' : ''}
+        <div class="d-flex justify-content-between text-muted small"><span>GST</span><span>$${tx.gst.toFixed(2)}</span></div>
+        <div class="d-flex justify-content-between text-muted small"><span>PST</span><span>$${tx.pst.toFixed(2)}</span></div>
+        <div class="d-flex justify-content-between fw-bold fs-5 mt-1"><span>TOTAL</span><span>$${tx.total.toFixed(2)}</span></div>
+        <hr>
+        ${payLines}
+        ${tx.change > 0 ? `<div class="d-flex justify-content-between fw-bold text-success"><span>CHANGE</span><span>$${tx.change.toFixed(2)}</span></div>` : ''}
+        <hr>
+        <div class="text-muted small mt-2">*** TRAINING MODE ***</div>
+        <div class="text-muted small">Not a real receipt</div>
+        <div class="mt-3 text-muted small" id="receiptCountdown">Returning in 5s...</div>
+    `;
+
+    overlay.classList.remove('hidden');
+
+    let countdown = 5;
+    const timer = setInterval(() => {
+        countdown--;
+        const el = document.getElementById('receiptCountdown');
+        if (el) el.textContent = `Returning in ${countdown}s...`;
+        if (countdown <= 0) {
+            clearInterval(timer);
+            overlay.classList.add('hidden');
+        }
+    }, 1000);
+
+    // Also allow clicking to dismiss
+    overlay.addEventListener('click', () => {
+        clearInterval(timer);
+        overlay.classList.add('hidden');
+    }, { once: true });
+}
+
+// ══════════════════════════════════════════════════════
+// SHIFT CLOSE
+// ══════════════════════════════════════════════════════
+
+function startCloseShift() {
+    const txCount = state.transactions.length;
+    const totalSales = state.transactions.reduce((s, tx) => s + tx.total, 0);
+    const cashSales = state.transactions.reduce((s, tx) =>
+        s + tx.payments.filter(p => p.method === 'cash').reduce((ss, p) => ss + p.amount, 0), 0);
+    const cardSales = state.transactions.reduce((s, tx) =>
+        s + tx.payments.filter(p => p.method === 'card').reduce((ss, p) => ss + p.amount, 0), 0);
+    const totalChange = state.transactions.reduce((s, tx) => s + tx.change, 0);
+
+    document.getElementById('closeTxCount').textContent = txCount;
+    document.getElementById('closeTotalSales').textContent = '$' + totalSales.toFixed(2);
+
+    const tbody = document.querySelector('#closePaymentTable tbody');
+    tbody.innerHTML = `
+        <tr><td>Cash received</td><td class="text-end">$${cashSales.toFixed(2)}</td></tr>
+        <tr><td>Change given</td><td class="text-end text-danger">-$${totalChange.toFixed(2)}</td></tr>
+        <tr class="fw-bold"><td>Net cash</td><td class="text-end">$${(cashSales - totalChange).toFixed(2)}</td></tr>
+        <tr><td>Card</td><td class="text-end">$${cardSales.toFixed(2)}</td></tr>
+        <tr class="fw-bold border-top"><td>Total</td><td class="text-end">$${totalSales.toFixed(2)}</td></tr>`;
+
+    // Compute balanced hint values
+    const netCash = +(cashSales - totalChange).toFixed(2);
+    const hintDeposit = netCash;                                     // deposit all net cash
+    const hintCashCount = +(state.openingFloat + netCash - hintDeposit).toFixed(2); // = opening float
+    const hintCard = +cardSales.toFixed(2);
+
+    document.getElementById('hintCash').textContent = 'Enter: $' + hintCashCount.toFixed(2);
+    document.getElementById('hintDeposit').textContent = 'Enter: $' + hintDeposit.toFixed(2);
+    document.getElementById('hintCard').textContent = 'Enter: $' + hintCard.toFixed(2);
+
+    // Clear form inputs
+    document.getElementById('closingCash').value = '';
+    document.getElementById('closingDeposit').value = '';
+    document.getElementById('closingCard').value = '';
+    document.getElementById('closingTips').value = '0.00';
+    document.getElementById('closingNotes').value = '';
+
+    showScreen('screenClose');
+}
+
+function cancelClose() {
+    showScreen('screenTerminal');
+}
+
+function submitClose() {
+    const closingCash = parseFloat(document.getElementById('closingCash').value) || 0;
+    const deposit = parseFloat(document.getElementById('closingDeposit').value) || 0;
+    const cardBatch = parseFloat(document.getElementById('closingCard').value) || 0;
+    const tips = parseFloat(document.getElementById('closingTips').value) || 0;
+    const notes = document.getElementById('closingNotes').value;
+
+    generateReport(closingCash, deposit, cardBatch, tips, notes);
+    showScreen('screenReport');
+}
+
+// ══════════════════════════════════════════════════════
+// SHIFT REPORT
+// ══════════════════════════════════════════════════════
+
+function generateReport(closingCash, deposit, cardBatch, tips, notes) {
+    const shiftEnd = new Date();
+    const txCount = state.transactions.length;
+    const totalSales = state.transactions.reduce((s, tx) => s + tx.total, 0);
+
+    const cashReceived = state.transactions.reduce((s, tx) =>
+        s + tx.payments.filter(p => p.method === 'cash').reduce((ss, p) => ss + p.amount, 0), 0);
+    const totalChange = state.transactions.reduce((s, tx) => s + tx.change, 0);
+    const netCash = +(cashReceived - totalChange).toFixed(2);
+    const cardTotal = state.transactions.reduce((s, tx) =>
+        s + tx.payments.filter(p => p.method === 'card').reduce((ss, p) => ss + p.amount, 0), 0);
+
+    // Cash reconciliation
+    const expectedCash = +(state.openingFloat + netCash - deposit).toFixed(2);
+    const cashDiff = +(closingCash - expectedCash).toFixed(2);
+    const cashDiffClass = cashDiff === 0 ? 'text-success' : (Math.abs(cashDiff) <= 1 ? 'text-warning' : 'text-danger');
+    const cashDiffLabel = cashDiff > 0 ? 'OVER' : (cashDiff < 0 ? 'SHORT' : 'BALANCED');
+
+    // Card reconciliation
+    const cardDiff = +(cardBatch - cardTotal).toFixed(2);
+    const cardDiffClass = cardDiff === 0 ? 'text-success' : 'text-danger';
+
+    const fmtTime = d => d.toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' });
+    const fmtDate = d => d.toLocaleDateString('en-CA');
+
+    // Transaction list
+    let txRows = '';
+    state.transactions.forEach(tx => {
+        const payMethods = tx.payments.map(p => p.method).join(', ');
+        txRows += `<tr>
+            <td>#${tx.id}</td>
+            <td>${fmtTime(tx.time)}</td>
+            <td>${tx.cashier}</td>
+            <td>${tx.items.length} items</td>
+            <td class="text-capitalize">${payMethods}</td>
+            <td class="text-end fw-bold">$${tx.total.toFixed(2)}</td>
+        </tr>`;
+    });
+
+    document.getElementById('reportContent').innerHTML = `
+        <h3 class="text-center mb-1">Shift Report</h3>
+        <div class="text-center text-muted mb-4">*** TRAINING MODE ***</div>
+
+        <div class="row mb-4">
+            <div class="col-6">
+                <strong>Terminal:</strong> ${state.terminal.name}<br>
+                <strong>Opened by:</strong> ${state.manager}<br>
+                <strong>Date:</strong> ${fmtDate(state.shiftStart)}
+            </div>
+            <div class="col-6 text-end">
+                <strong>Shift start:</strong> ${fmtTime(state.shiftStart)}<br>
+                <strong>Shift end:</strong> ${fmtTime(shiftEnd)}<br>
+                <strong>Transactions:</strong> ${txCount}
+            </div>
+        </div>
+
+        <h5 class="border-bottom pb-2">Cash Reconciliation</h5>
+        <table class="table table-sm mb-4">
+            <tr><td>Opening float</td><td class="text-end">$${state.openingFloat.toFixed(2)}</td></tr>
+            <tr><td>Cash received</td><td class="text-end">$${cashReceived.toFixed(2)}</td></tr>
+            <tr><td>Change given</td><td class="text-end text-danger">-$${totalChange.toFixed(2)}</td></tr>
+            <tr><td>Net cash sales</td><td class="text-end">$${netCash.toFixed(2)}</td></tr>
+            <tr><td>Deposit removed</td><td class="text-end text-danger">-$${deposit.toFixed(2)}</td></tr>
+            <tr class="fw-bold"><td>Expected in drawer</td><td class="text-end">$${expectedCash.toFixed(2)}</td></tr>
+            <tr class="fw-bold"><td>Counted</td><td class="text-end">$${closingCash.toFixed(2)}</td></tr>
+            <tr class="fw-bold"><td>Difference</td><td class="text-end ${cashDiffClass}">
+                $${Math.abs(cashDiff).toFixed(2)} ${cashDiffLabel}
+            </td></tr>
+        </table>
+
+        <h5 class="border-bottom pb-2">Card Reconciliation</h5>
+        <table class="table table-sm mb-4">
+            <tr><td>POS card total</td><td class="text-end">$${cardTotal.toFixed(2)}</td></tr>
+            <tr><td>Terminal batch total</td><td class="text-end">$${cardBatch.toFixed(2)}</td></tr>
+            <tr class="fw-bold"><td>Difference</td><td class="text-end ${cardDiffClass}">
+                $${Math.abs(cardDiff).toFixed(2)} ${cardDiff === 0 ? 'MATCHED' : (cardDiff > 0 ? 'OVER' : 'SHORT')}
+            </td></tr>
+        </table>
+
+        ${tips > 0 ? `<div class="mb-3"><strong>Tips:</strong> $${tips.toFixed(2)}</div>` : ''}
+        ${notes ? `<div class="mb-3"><strong>Notes:</strong> ${notes}</div>` : ''}
+
+        <h5 class="border-bottom pb-2 mt-4">Transactions</h5>
+        ${txCount > 0 ? `
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead><tr>
+                    <th>#</th><th>Time</th><th>Cashier</th><th>Items</th><th>Payment</th><th class="text-end">Total</th>
+                </tr></thead>
+                <tbody>${txRows}</tbody>
+                <tfoot><tr class="fw-bold border-top">
+                    <td colspan="5">Total Sales</td>
+                    <td class="text-end">$${totalSales.toFixed(2)}</td>
+                </tr></tfoot>
+            </table>
+        </div>` : '<p class="text-muted">No transactions this session.</p>'}
+
+        <div class="text-center mt-4">
+            <button class="btn btn-primary btn-lg" onclick="resetTraining()">
+                Start New Training Session
+            </button>
+        </div>
+    `;
+}
+
+function resetTraining() {
+    state = {
+        manager: 'Mark M.',
+        terminal: null,
+        cashier: null,
+        openingFloat: 200,
+        shiftStart: null,
+        cart: [],
+        discount: false,
+        transactions: [],
+        payments: [],
+        currentScreen: 'screenLogin',
+    };
+    loginPin = '';
+    staffPin = '';
+    activeCategory = 'all';
+    updateDots('loginDots', '', 3);
+    showScreen('screenLogin');
+}
+
+// ══════════════════════════════════════════════════════
+// KEYBOARD SUPPORT
+// ══════════════════════════════════════════════════════
+
+document.addEventListener('keydown', e => {
+    // ESC to close modals/overlays
+    if (e.key === 'Escape') {
+        const staffOverlay = document.getElementById('staffPinOverlay');
+        if (!staffOverlay.classList.contains('hidden')) {
+            closeStaffPin();
+            e.preventDefault();
+        }
+        const receiptOverlay = document.getElementById('receiptOverlay');
+        if (!receiptOverlay.classList.contains('hidden')) {
+            receiptOverlay.classList.add('hidden');
+            e.preventDefault();
+        }
+    }
+});
+
+// ══════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════
+
+showScreen('screenLogin');
+</script>
+</body>
+</html>

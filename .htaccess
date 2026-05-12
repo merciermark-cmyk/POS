@@ -2,10 +2,13 @@ Options -Indexes
 Options -MultiViews
 
 # IP Whitelist — only allow store and admin
-Order Deny,Allow
-Deny from all
-Allow from 209.121.249.78
-Allow from 209.53.51.50
+<RequireAny>
+    Require ip 209.121.249.78
+    Require ip 108.172.174.222
+    Require ip 172.218.125.23
+    Require ip 207.194.52.251
+    Require ip 154.20.185.221
+</RequireAny>
 
 # Block access to sensitive directories
 RewriteEngine On

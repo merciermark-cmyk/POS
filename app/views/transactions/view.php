@@ -91,13 +91,40 @@ ob_start();
             </table>
 
             <h5>Payments</h5>
-            <table class="table table-sm" style="max-width:400px">
+            <table class="table table-sm" style="max-width:500px">
                 <?php foreach ($payments as $pay): ?>
                     <tr>
                         <td><?= e(ucfirst(str_replace('_', ' ', $pay['method']))) ?></td>
                         <td class="text-end">$<?= number_format($pay['amount'], 2) ?></td>
                         <td class="text-muted"><?= e($pay['reference'] ?? '') ?></td>
+                        <?php if (in_array($transaction['status'], ['completed', 'partial_refund'])): ?>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1"
+                                        onclick="togglePaymentEdit(<?= $pay['id'] ?>)" title="Change method">
+                                    <small>Edit</small>
+                                </button>
+                            </td>
+                        <?php endif; ?>
                     </tr>
+                    <?php if (in_array($transaction['status'], ['completed', 'partial_refund'])): ?>
+                        <tr id="payEdit-<?= $pay['id'] ?>" class="d-none">
+                            <td colspan="4">
+                                <form method="post" action="<?= baseUrl('transactions/change-payment') ?>" class="d-flex align-items-center gap-2">
+                                    <?= csrfField() ?>
+                                    <input type="hidden" name="payment_id" value="<?= $pay['id'] ?>">
+                                    <input type="hidden" name="transaction_id" value="<?= $transaction['id'] ?>">
+                                    <select name="new_method" class="form-select form-select-sm" style="width:auto">
+                                        <option value="cash" <?= $pay['method'] === 'cash' ? 'selected' : '' ?>>Cash</option>
+                                        <option value="card" <?= $pay['method'] === 'card' ? 'selected' : '' ?>>Card</option>
+                                        <option value="gift_card" <?= $pay['method'] === 'gift_card' ? 'selected' : '' ?>>Gift Card</option>
+                                        <option value="web_gift_card" <?= $pay['method'] === 'web_gift_card' ? 'selected' : '' ?>>Web Gift Card</option>
+                                    </select>
+                                    <button type="submit" class="btn btn-sm btn-primary">Save</button>
+                                    <button type="button" class="btn btn-sm btn-link" onclick="togglePaymentEdit(<?= $pay['id'] ?>)">Cancel</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endif; ?>
                 <?php endforeach; ?>
             </table>
 
@@ -222,6 +249,11 @@ ob_start();
 <?php endif; ?>
 
 <script>
+function togglePaymentEdit(payId) {
+    var row = document.getElementById('payEdit-' + payId);
+    if (row) row.classList.toggle('d-none');
+}
+
 function printReceipt(txnId) {
     fetch('<?= baseUrl('api/print/receipt') ?>', {
         method: 'POST',

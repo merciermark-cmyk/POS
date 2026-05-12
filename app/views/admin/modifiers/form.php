@@ -29,6 +29,14 @@ ob_start();
     </div>
 
     <div class="mb-3">
+        <label class="form-label">Group</label>
+        <select name="modifier_group" class="form-select">
+            <option value="beverage" <?= ($modifier['modifier_group'] ?? 'beverage') === 'beverage' ? 'selected' : '' ?>>Beverage</option>
+            <option value="loose_tea" <?= ($modifier['modifier_group'] ?? '') === 'loose_tea' ? 'selected' : '' ?>>Loose Tea</option>
+        </select>
+    </div>
+
+    <div class="mb-3">
         <label class="form-label">Sort Order</label>
         <input type="number" name="sort_order" class="form-control" min="0"
                value="<?= (int)($modifier['sort_order'] ?? 0) ?>">

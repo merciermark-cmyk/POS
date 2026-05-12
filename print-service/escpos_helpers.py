@@ -138,7 +138,11 @@ def build_receipt(txn_data: dict, change: float = 0) -> bytes:
 
     # Payments
     for pay in payments:
-        method = pay['method'].replace('_', ' ').title()
+        ref = pay.get('reference', '') or ''
+        if ref.startswith('USD '):
+            method = f'Cash ({ref})'
+        else:
+            method = pay['method'].replace('_', ' ').title()
         out += _right_col(method, f'${float(pay["amount"]):.2f}')
 
     if change > 0:

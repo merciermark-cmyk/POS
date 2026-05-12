@@ -30,6 +30,14 @@ ob_start();
         <div class="form-text">The URL of the print service running on this terminal's machine.</div>
     </div>
 
+    <div class="mb-3">
+        <label class="form-label">Moneris Terminal ID</label>
+        <input type="text" name="moneris_terminal_id" class="form-control"
+               value="<?= e($terminal['moneris_terminal_id'] ?? '') ?>"
+               placeholder="e.g. P0401234 (leave blank if not using Moneris)">
+        <div class="form-text">The Moneris Go terminal ID assigned to this register.</div>
+    </div>
+
     <div class="mb-3 form-check">
         <input type="checkbox" name="is_active" class="form-check-input" id="isActive"
                <?= ($terminal['is_active'] ?? 1) ? 'checked' : '' ?>>

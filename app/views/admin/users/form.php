@@ -29,16 +29,10 @@ ob_start();
     </div>
 
     <div class="mb-3">
-        <label class="form-label">Quick PIN (4 digits, optional)</label>
-        <input type="text" name="pin" class="form-control" maxlength="4" pattern="\d{4}"
-               value="<?= e($user['pin'] ?? '') ?>">
-    </div>
-
-    <div class="mb-3">
-        <label class="form-label">Staff Code (3 digits, optional)</label>
-        <input type="text" name="staff_code" class="form-control" maxlength="3" pattern="\d{3}"
-               value="<?= e($user['staff_code'] ?? '') ?>"
-               placeholder="Used to verify identity on staff picker">
+        <label class="form-label">PIN (1–3 digits, optional)</label>
+        <input type="text" name="pin" class="form-control" maxlength="3" pattern="\d{1,3}"
+               value="<?= e($user['pin'] ?? '') ?>"
+               placeholder="Used for login and staff picker">
     </div>
 
     <div class="mb-3">
@@ -48,6 +42,22 @@ ob_start();
             <option value="manager" <?= ($user['role'] ?? '') === 'manager' ? 'selected' : '' ?>>Manager</option>
         </select>
     </div>
+
+    <?php if ($editing ?? false): ?>
+    <div class="mb-3">
+        <label class="form-label">Schedule Account</label>
+        <select name="schedule_user_id" class="form-select">
+            <option value="">— None —</option>
+            <?php foreach ($schedUsers ?? [] as $su): ?>
+                <option value="<?= (int)$su['id'] ?>"
+                    <?= (($user['schedule_user_id'] ?? '') == $su['id']) ? 'selected' : '' ?>>
+                    <?= e($su['name']) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+        <div class="form-text">Link to schedule app for clock in/out</div>
+    </div>
+    <?php endif; ?>
 
     <div class="mb-3 form-check">
         <input type="checkbox" name="is_active" class="form-check-input" id="isActive"

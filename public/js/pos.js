@@ -5,10 +5,19 @@
     const baseUrl = document.querySelector('meta[name="base-url"]')?.content || '/';
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
-    // Category tree + beverage modifier globals (set in terminal.php)
+    // Category tree + modifier globals (set in terminal.php)
     const categoryTree = window.POS_CATEGORY_TREE || [];
     const beverageCatIds = window.POS_BEVERAGE_CAT_IDS || [];
-    const modifiers = window.POS_MODIFIERS || [];
+    const looseTeaCatIds = window.POS_LOOSE_TEA_CAT_IDS || [];
+    const modifiersByGroup = window.POS_MODIFIERS || {};
+
+    /** Determine which modifier group a category belongs to, or null */
+    function getModifierGroup(categoryId) {
+        const catId = parseInt(categoryId);
+        if (beverageCatIds.includes(catId) && modifiersByGroup.beverage?.length) return 'beverage';
+        if (looseTeaCatIds.includes(catId) && modifiersByGroup.loose_tea?.length) return 'loose_tea';
+        return null;
+    }
 
     // Track active subcategory filter
     let activeSubCategory = null;
@@ -81,11 +90,9 @@
     document.querySelectorAll('.parent-cat-btn').forEach(btn => {
         btn.addEventListener('click', function() {
             document.querySelectorAll('.parent-cat-btn').forEach(b => {
-                b.classList.remove('active', 'btn-primary');
-                b.classList.add('btn-outline-primary');
+                b.classList.remove('active');
             });
-            this.classList.remove('btn-outline-primary');
-            this.classList.add('active', 'btn-primary');
+            this.classList.add('active');
 
             const parentId = this.dataset.category;
             const hasChildren = this.dataset.hasChildren === '1';
@@ -102,14 +109,43 @@
 
     // ── Product search (created via JS to prevent browser autofill) ──
     const searchWrap = document.getElementById('pqw');
+    const searchForm = document.createElement('form');
+    searchForm.autocomplete = 'off';
+    searchForm.setAttribute('role', 'presentation');
+    searchForm.addEventListener('submit', e => e.preventDefault());
+    searchForm.style.cssText = 'flex:1;display:flex';
     const searchInput = document.createElement('input');
-    searchInput.type = 'search';
+    searchInput.type = 'text';
+    searchInput.name = 'pqw_f';
     searchInput.id = 'productSearch';
     searchInput.className = 'form-control';
     searchInput.placeholder = 'Search products...';
-    searchInput.autocomplete = 'off';
-    searchWrap.appendChild(searchInput);
-    searchInput.addEventListener('input', () => filterProducts());
+    searchInput.autocomplete = 'one-time-code';
+    searchInput.setAttribute('data-lpignore', 'true');
+    searchInput.setAttribute('data-1p-ignore', 'true');
+    const searchClear = document.createElement('button');
+    searchClear.type = 'button';
+    searchClear.innerHTML = '&times;';
+    searchClear.className = 'btn btn-outline-secondary';
+    searchClear.style.cssText = 'display:none;font-size:1.3rem;line-height:1;padding:0.25rem 0.75rem;margin-left:-1px;border-top-left-radius:0;border-bottom-left-radius:0';
+    searchClear.addEventListener('click', () => {
+        searchInput.value = '';
+        searchClear.style.display = 'none';
+        searchInput.style.borderTopRightRadius = '';
+        searchInput.style.borderBottomRightRadius = '';
+        filterProducts();
+        searchInput.focus();
+    });
+    searchForm.appendChild(searchInput);
+    searchForm.appendChild(searchClear);
+    searchWrap.appendChild(searchForm);
+    searchInput.addEventListener('input', () => {
+        const hasText = searchInput.value.length > 0;
+        searchClear.style.display = hasText ? '' : 'none';
+        searchInput.style.borderTopRightRadius = hasText ? '0' : '';
+        searchInput.style.borderBottomRightRadius = hasText ? '0' : '';
+        filterProducts();
+    });
 
     function filterProducts() {
         const activeParent = document.querySelector('.parent-cat-btn.active')?.dataset.category || '';
@@ -135,60 +171,104 @@
         });
     }
 
-    // ── PLU quick-entry ───────────────────────────────────────────────
-    const pluInput = document.getElementById('pluInput');
-    if (pluInput) {
-        pluInput.addEventListener('keydown', async function(e) {
-            if (e.key !== 'Enter') return;
-            e.preventDefault();
-            const plu = this.value.trim().toLowerCase();
-            if (!plu) return;
+    // ── PLU keypad ────────────────────────────────────────────────────
+    let pluKeypadInput = '';
+    let pluKeypadInstance = null;
+    const pluDisplay = document.getElementById('pluKeypadDisplay');
+    const pluBtn = document.getElementById('pluBtn');
 
-            // Find product card matching this PLU code
-            const card = document.querySelector('.pos-product-card[data-code="' + CSS.escape(plu) + '"]');
-            if (!card) {
-                this.classList.add('is-invalid');
-                setTimeout(() => this.classList.remove('is-invalid'), 1000);
-                this.select();
-                return;
+    function updatePluDisplay() {
+        if (pluDisplay) pluDisplay.textContent = pluKeypadInput || '_';
+    }
+
+    async function submitPlu() {
+        const plu = pluKeypadInput.trim().toLowerCase();
+        if (!plu) return;
+
+        const card = document.querySelector('.pos-product-card[data-code="' + CSS.escape(plu) + '"]');
+        if (!card) {
+            if (pluDisplay) {
+                pluDisplay.classList.add('text-danger');
+                pluDisplay.textContent = 'Not found';
+                setTimeout(() => { pluDisplay.classList.remove('text-danger'); pluKeypadInput = ''; updatePluDisplay(); }, 1000);
             }
+            return;
+        }
 
-            // Clear input and flash green
-            this.value = '';
-            this.classList.add('is-valid');
-            setTimeout(() => this.classList.remove('is-valid'), 500);
+        pluKeypadInput = '';
+        updatePluDisplay();
+        pluKeypadInstance?.hide();
 
-            // Same logic as product card click — check beverage for modifier modal
-            const productId = card.dataset.id;
-            const productCat = card.dataset.category;
-            const productName = card.querySelector('.pos-product-name')?.textContent || '';
-            const productPrice = parseFloat(card.dataset.price) || 0;
+        const productId = card.dataset.id;
+        const productCat = card.dataset.category;
+        const productName = card.querySelector('.pos-product-name')?.textContent || '';
+        const productPrice = parseFloat(card.dataset.price) || 0;
 
-            if (beverageCatIds.length > 0 && beverageCatIds.includes(parseInt(productCat)) && modifiers.length > 0) {
-                openModifierModal(productId, productName, productPrice);
-                return;
+        const pluGroup = getModifierGroup(productCat);
+        if (pluGroup === 'beverage') {
+            openModifierModal(productId, productName, productPrice, 'beverage');
+            return;
+        }
+
+        const data = { product_id: productId, quantity: 1 };
+        if (pluGroup === 'loose_tea') data.loose_tea = 1;
+        const result = await apiPost('api/cart/add', data);
+        if (result.error) { alert(result.error); return; }
+        renderCart(result);
+        updatePoleDisplay(result);
+    }
+
+    if (pluBtn) {
+        pluBtn.addEventListener('click', function() {
+            pluKeypadInput = '';
+            updatePluDisplay();
+            if (!pluKeypadInstance) {
+                pluKeypadInstance = new bootstrap.Modal(document.getElementById('pluKeypadModal'));
             }
-
-            const result = await apiPost('api/cart/add', { product_id: productId, quantity: 1 });
-            if (result.error) {
-                alert(result.error);
-                return;
-            }
-            renderCart(result);
-            updatePoleDisplay(result);
+            pluKeypadInstance.show();
         });
     }
 
+    document.querySelectorAll('.plu-key').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const key = this.dataset.key;
+            switch (key) {
+                case '0': case '1': case '2': case '3': case '4':
+                case '5': case '6': case '7': case '8': case '9':
+                    pluKeypadInput += key;
+                    break;
+                case '.':
+                    pluKeypadInput += '.';
+                    break;
+                case 'backspace':
+                    pluKeypadInput = pluKeypadInput.slice(0, -1);
+                    break;
+                case 'clear':
+                    pluKeypadInput = '';
+                    break;
+                case 'enter':
+                    submitPlu();
+                    return;
+            }
+            updatePluDisplay();
+        });
+    });
+
     // ── Modifier modal state ─────────────────────────────────────────
-    let modModalProduct = null;      // { id, name, price }
+    let modModalProduct = null;      // { id, name, price, group }
     let modModalSelected = [];       // [{ id, name, price, qty }]
     let modModalInstance = null;
 
-    function openModifierModal(productId, productName, productPrice) {
-        modModalProduct = { id: productId, name: productName, price: productPrice };
+    function openModifierModal(productId, productName, productPrice, group) {
+        modModalProduct = { id: productId, name: productName, price: productPrice, group: group };
         modModalSelected = [];
 
-        document.getElementById('modifierModalTitle').textContent = productName;
+        const isLooseTea = group === 'loose_tea';
+        document.getElementById('modifierModalTitle').textContent = isLooseTea ? 'Select Tin' : productName;
+        const header = document.querySelector('#modifierModal .modal-header');
+        header.className = 'modal-header text-white ' + (isLooseTea ? 'bg-success' : 'bg-info');
+        const addBtn = document.getElementById('addWithModsBtn');
+        addBtn.className = 'btn btn-lg ' + (isLooseTea ? 'btn-success' : 'btn-info');
         renderModifierButtons();
         renderSelectedModifiers();
 
@@ -198,28 +278,91 @@
         modModalInstance.show();
     }
 
+    /** Determine tin size from modifier name: '50g' → 0.5, '100g' → 1, else null */
+    function tinSizeQty(name) {
+        if (/\b50g\b/i.test(name)) return 0.5;
+        if (/\b100g\b/i.test(name)) return 1;
+        return null;
+    }
+
     function renderModifierButtons() {
         const container = document.getElementById('modifierButtons');
-        container.innerHTML = modifiers.map(m => `
-            <button class="btn btn-outline-info btn-lg mod-select-btn"
-                    data-mod-id="${m.id}" data-mod-name="${escHtml(m.name)}" data-mod-price="${m.price}">
-                ${escHtml(m.name)} +$${parseFloat(m.price).toFixed(2)}
-            </button>
-        `).join('');
+        const group = modModalProduct ? modModalProduct.group : 'beverage';
+        const groupMods = modifiersByGroup[group] || [];
+        const isLooseTea = group === 'loose_tea';
+        const btnClass = isLooseTea ? 'btn-outline-success' : 'btn-outline-info';
+
+        if (isLooseTea) {
+            // Group tins by size: 50g, 100g, other
+            const tins50 = groupMods.filter(m => /\b50g\b/i.test(m.name));
+            const tins100 = groupMods.filter(m => /\b100g\b/i.test(m.name));
+            const tinsOther = groupMods.filter(m => !(/\b50g\b/i.test(m.name) || /\b100g\b/i.test(m.name)));
+
+            let html = '';
+            if (tins50.length) {
+                html += '<div class="w-100 mb-1"><small class="text-muted fw-bold">50g Tins</small></div>';
+                html += tins50.map(m => `
+                    <button class="btn ${btnClass} btn-lg mod-select-btn"
+                            data-mod-id="${m.id}" data-mod-name="${escHtml(m.name)}" data-mod-price="${m.price}"
+                            data-tin-qty="0.5">
+                        ${escHtml(m.name)} +$${parseFloat(m.price).toFixed(2)}
+                    </button>
+                `).join('');
+            }
+            if (tins100.length) {
+                html += '<div class="w-100 mb-1 mt-2"><small class="text-muted fw-bold">100g Tins</small></div>';
+                html += tins100.map(m => `
+                    <button class="btn ${btnClass} btn-lg mod-select-btn"
+                            data-mod-id="${m.id}" data-mod-name="${escHtml(m.name)}" data-mod-price="${m.price}"
+                            data-tin-qty="1">
+                        ${escHtml(m.name)} +$${parseFloat(m.price).toFixed(2)}
+                    </button>
+                `).join('');
+            }
+            if (tinsOther.length) {
+                html += '<div class="w-100 mb-1 mt-2"><small class="text-muted fw-bold">Other Tins</small></div>';
+                html += tinsOther.map(m => `
+                    <button class="btn ${btnClass} btn-lg mod-select-btn"
+                            data-mod-id="${m.id}" data-mod-name="${escHtml(m.name)}" data-mod-price="${m.price}">
+                        ${escHtml(m.name)} +$${parseFloat(m.price).toFixed(2)}
+                    </button>
+                `).join('');
+            }
+            container.innerHTML = html;
+        } else {
+            container.innerHTML = groupMods.map(m => `
+                <button class="btn ${btnClass} btn-lg mod-select-btn"
+                        data-mod-id="${m.id}" data-mod-name="${escHtml(m.name)}" data-mod-price="${m.price}">
+                    ${escHtml(m.name)} +$${parseFloat(m.price).toFixed(2)}
+                </button>
+            `).join('');
+        }
 
         container.querySelectorAll('.mod-select-btn').forEach(btn => {
             btn.addEventListener('click', function() {
                 const modId = parseInt(this.dataset.modId);
-                const existing = modModalSelected.find(s => s.id === modId);
-                if (existing) {
-                    existing.qty++;
-                } else {
-                    modModalSelected.push({
+
+                if (isLooseTea) {
+                    // For loose tea, only one tin allowed — replace selection
+                    modModalSelected = [{
                         id: modId,
                         name: this.dataset.modName,
                         price: parseFloat(this.dataset.modPrice),
-                        qty: 1
-                    });
+                        qty: 1,
+                        tinQty: this.dataset.tinQty ? parseFloat(this.dataset.tinQty) : null
+                    }];
+                } else {
+                    const existing = modModalSelected.find(s => s.id === modId);
+                    if (existing) {
+                        existing.qty++;
+                    } else {
+                        modModalSelected.push({
+                            id: modId,
+                            name: this.dataset.modName,
+                            price: parseFloat(this.dataset.modPrice),
+                            qty: 1
+                        });
+                    }
                 }
                 renderSelectedModifiers();
             });
@@ -228,6 +371,7 @@
 
     function renderSelectedModifiers() {
         const container = document.getElementById('modifierSelected');
+        const isLooseTea = modModalProduct && modModalProduct.group === 'loose_tea';
 
         if (modModalSelected.length === 0) {
             container.innerHTML = '<p class="text-muted" id="noModsMsg">None (plain)</p>';
@@ -252,19 +396,36 @@
         }
 
         // Update item total preview
-        let total = modModalProduct ? modModalProduct.price : 0;
-        modModalSelected.forEach(m => { total += m.price * m.qty; });
+        const basePrice = modModalProduct ? modModalProduct.price : 0;
+        let total;
+        if (isLooseTea && modModalSelected.length > 0) {
+            // Loose tea: compute tea cost at tin quantity + flat tin price
+            const sel = modModalSelected[0];
+            const qty = sel.tinQty || 1;
+            const teaCost = round2(basePrice * qty);
+            total = teaCost + sel.price;
+        } else {
+            total = basePrice;
+            modModalSelected.forEach(m => { total += m.price * m.qty; });
+        }
         document.getElementById('modifierItemTotal').textContent = '$' + total.toFixed(2);
     }
+
+    function round2(n) { return Math.round(n * 100) / 100; }
 
     // Add Plain button
     document.getElementById('addPlainBtn')?.addEventListener('click', async function() {
         if (!modModalProduct) return;
         modModalInstance?.hide();
-        const result = await apiPost('api/cart/add', {
+        const data = {
             product_id: modModalProduct.id,
             quantity: 1
-        });
+        };
+        // Flag loose tea for correct pricing even when plain
+        if (modModalProduct.group === 'loose_tea') {
+            data.loose_tea = 1;
+        }
+        const result = await apiPost('api/cart/add', data);
         if (!result.error) {
             renderCart(result);
             updatePoleDisplay(result);
@@ -275,12 +436,24 @@
     document.getElementById('addWithModsBtn')?.addEventListener('click', async function() {
         if (!modModalProduct) return;
         modModalInstance?.hide();
+        const isLooseTea = modModalProduct.group === 'loose_tea';
+
+        // For loose tea, tin selection drives the quantity
+        let qty = 1;
+        if (isLooseTea && modModalSelected.length > 0) {
+            const tinQty = modModalSelected[0].tinQty;
+            if (tinQty) qty = tinQty;
+        }
+
         const data = {
             product_id: modModalProduct.id,
-            quantity: 1
+            quantity: qty
         };
         if (modModalSelected.length > 0) {
             data.modifiers = JSON.stringify(modModalSelected);
+        }
+        if (isLooseTea) {
+            data.loose_tea = 1;
         }
         const result = await apiPost('api/cart/add', data);
         if (!result.error) {
@@ -297,14 +470,35 @@
             const productName = this.querySelector('.pos-product-name')?.textContent || '';
             const productPrice = parseFloat(this.dataset.price) || 0;
 
-            // If beverage category (parent or subcategory) and modifiers exist, open modal
-            if (beverageCatIds.length > 0 && beverageCatIds.includes(parseInt(productCat)) && modifiers.length > 0) {
-                openModifierModal(productId, productName, productPrice);
+            // Beverages → open modifier modal; loose tea direct-add (tin button handles modal)
+            const modGroup = getModifierGroup(productCat);
+            if (modGroup === 'beverage') {
+                openModifierModal(productId, productName, productPrice, 'beverage');
+                return;
+            }
+
+            // Non-tracked loose tea → prompt for tea name + price
+            const productCode = (this.dataset.code || '').toLowerCase();
+            if (productCode === 'loose-tea') {
+                const teaName = prompt('Tea name:');
+                if (teaName === null) return; // cancelled
+                const priceStr = prompt('Price ($):');
+                if (priceStr === null) return; // cancelled
+                const price = parseFloat(priceStr);
+                if (!price || price <= 0) { alert('Please enter a valid price.'); return; }
+                const data = { product_id: productId, quantity: 1, custom_price: price.toFixed(2) };
+                if (teaName.trim()) data.custom_name = teaName.trim();
+                const result = await apiPost('api/cart/add', data);
+                if (result.error) { alert(result.error); return; }
+                renderCart(result);
+                updatePoleDisplay(result);
                 return;
             }
 
             // Otherwise direct add
-            const result = await apiPost('api/cart/add', { product_id: productId, quantity: 1 });
+            const data = { product_id: productId, quantity: 1 };
+            if (modGroup === 'loose_tea') data.loose_tea = 1;
+            const result = await apiPost('api/cart/add', data);
             if (result.error) {
                 alert(result.error);
                 return;
@@ -313,6 +507,28 @@
             updatePoleDisplay(result);
         });
     });
+
+    // ── Tin button overlay on loose tea product cards ─────────────────
+    if (looseTeaCatIds.length && modifiersByGroup.loose_tea?.length) {
+        document.querySelectorAll('.pos-product-card').forEach(card => {
+            const catId = parseInt(card.dataset.category);
+            if (!looseTeaCatIds.includes(catId)) return;
+
+            card.style.position = 'relative';
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-success btn-sm pos-tin-btn';
+            btn.textContent = 'Tin';
+            card.appendChild(btn);
+
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const productId = card.dataset.id;
+                const productName = card.querySelector('.pos-product-name')?.textContent || '';
+                const productPrice = parseFloat(card.dataset.price) || 0;
+                openModifierModal(productId, productName, productPrice, 'loose_tea');
+            });
+        });
+    }
 
     // ── Cart rendering ───────────────────────────────────────────────
     function renderCart(data) {
@@ -441,6 +657,10 @@
             btn.className = 'btn btn-sm btn-outline-purple';
             btn.textContent = 'WHOLESALE';
         }
+        // Show/hide wholesale-only products
+        document.querySelectorAll('.pos-product-card[data-wholesale-only]').forEach(function(card) {
+            card.style.display = active ? '' : 'none';
+        });
     }
 
     const wholesaleBtn = document.getElementById('wholesaleToggle');
@@ -462,10 +682,12 @@
                 const action = this.dataset.action;
                 const qtyEl = this.parentElement.querySelector('.qty-display');
                 let qty = parseFloat(qtyEl.textContent);
+                const step = qtyStepMap[cartKey] || 1;
 
-                qty = action === 'increase' ? qty + 1 : qty - 1;
+                qty = action === 'increase' ? qty + step : qty - step;
                 const result = await apiPost('api/cart/update', { cart_key: cartKey, quantity: qty });
                 renderCart(result);
+                updatePoleDisplay(result);
             });
         });
 
@@ -476,6 +698,7 @@
                 const cartKey = this.dataset.cartKey;
                 const result = await apiPost('api/cart/remove', { cart_key: cartKey });
                 renderCart(result);
+                updatePoleDisplay(result);
             });
         });
 
@@ -507,6 +730,9 @@
 
     // Initial binding
     bindCartButtons();
+
+    // ── Per-item +/− step sizes (set via keypad, persist across re-renders) ──
+    const qtyStepMap = {};   // cartKey → step size
 
     // ── Quantity Keypad Modal ─────────────────────────────────────────
     let qtyKeypadState = {
@@ -656,6 +882,10 @@
         }
 
         qtyKeypadState.instance?.hide();
+
+        // Remember the keypad-entered qty as the +/− step for this item
+        qtyStepMap[qtyKeypadState.cartKey] = qty;
+
         const postData = {
             cart_key: qtyKeypadState.cartKey,
             quantity: qty
@@ -665,6 +895,7 @@
         }
         const result = await apiPost('api/cart/update', postData);
         renderCart(result);
+        updatePoleDisplay(result);
     }
 
     // Bind keypad buttons
@@ -690,12 +921,132 @@
     });
 
     // ── Clear cart ───────────────────────────────────────────────────
+    // ── Subtotal button → push current total to pole display ────────
+    const subtotalBtn = document.getElementById('subtotalBtn');
+    if (subtotalBtn) {
+        subtotalBtn.addEventListener('click', function() {
+            const totalEl = document.getElementById('cartTotal');
+            const total = totalEl ? totalEl.textContent.trim() : '$0.00';
+            localPrint('/pole-display', { line1: 'SUBTOTAL', line2: total });
+        });
+    }
+
     const clearBtn = document.getElementById('clearCartBtn');
     if (clearBtn) {
         clearBtn.addEventListener('click', async function() {
             if (!confirm('Clear cart?')) return;
             const result = await apiPost('api/cart/clear');
             renderCart(result);
+        });
+    }
+
+    // ── Hold Order ───────────────────────────────────────────────────
+    let heldModalInstance = null;
+
+    function updateHoldBadge(count) {
+        const badge = document.getElementById('holdBadge');
+        if (!badge) return;
+        if (count > 0) {
+            badge.textContent = count;
+            badge.style.display = '';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+
+    function timeAgo(dateStr) {
+        const diff = Math.floor((Date.now() - new Date(dateStr + ' UTC').getTime()) / 1000);
+        if (diff < 60) return diff + 's ago';
+        if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+        return Math.floor(diff / 3600) + 'h ago';
+    }
+
+    async function openHeldOrdersModal() {
+        if (!heldModalInstance) {
+            heldModalInstance = new bootstrap.Modal(document.getElementById('heldOrdersModal'));
+        }
+        heldModalInstance.show();
+        await refreshHeldOrdersList();
+    }
+
+    async function refreshHeldOrdersList() {
+        const resp = await fetch(baseUrl + 'api/hold/list', { credentials: 'same-origin' });
+        const data = await resp.json();
+        const container = document.getElementById('heldOrdersList');
+        const orders = data.orders || [];
+
+        if (orders.length === 0) {
+            container.innerHTML = '<p class="text-muted text-center">No held orders.</p>';
+            return;
+        }
+
+        container.innerHTML = orders.map(o => `
+            <div class="card mb-2">
+                <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>${o.label ? escHtml(o.label) : 'Order #' + o.id}</strong>
+                            <span class="text-muted ms-2">${o.item_count} item(s)</span>
+                            <span class="fw-bold ms-2">$${parseFloat(o.cart_total).toFixed(2)}</span>
+                            <br><small class="text-muted">Held by ${escHtml(o.held_by_name || '?')} &mdash; ${timeAgo(o.created_at)}</small>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-success btn-sm held-resume-btn" data-id="${o.id}">Resume</button>
+                            <button class="btn btn-outline-danger btn-sm held-discard-btn" data-id="${o.id}">Discard</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+
+        container.querySelectorAll('.held-resume-btn').forEach(btn => {
+            btn.addEventListener('click', async function() {
+                const orderId = this.dataset.id;
+                // If current cart has items, auto-hold it first
+                const cartItems = document.querySelectorAll('.pos-cart-item');
+                if (cartItems.length > 0) {
+                    if (!confirm('Your current cart will be held automatically. Continue?')) return;
+                    await apiPost('api/hold/save', { label: '' });
+                }
+                const result = await apiPost('api/hold/resume', { id: orderId });
+                if (result.error) {
+                    alert(result.error);
+                    return;
+                }
+                renderCart(result);
+                if (typeof result.held_count !== 'undefined') updateHoldBadge(result.held_count);
+                heldModalInstance?.hide();
+            });
+        });
+
+        container.querySelectorAll('.held-discard-btn').forEach(btn => {
+            btn.addEventListener('click', async function() {
+                if (!confirm('Discard this held order?')) return;
+                const result = await apiPost('api/hold/delete', { id: this.dataset.id });
+                if (typeof result.held_count !== 'undefined') updateHoldBadge(result.held_count);
+                await refreshHeldOrdersList();
+            });
+        });
+    }
+
+    const holdBtn = document.getElementById('holdBtn');
+    if (holdBtn) {
+        holdBtn.addEventListener('click', async function() {
+            const cartItems = document.querySelectorAll('.pos-cart-item');
+            if (cartItems.length > 0) {
+                // Cart has items — prompt for label, save, then show modal
+                const label = prompt('Customer name (optional):') ?? '';
+                const result = await apiPost('api/hold/save', { label });
+                if (result.error) {
+                    alert(result.error);
+                    return;
+                }
+                // Clear cart UI
+                renderCart({ items: [], subtotal: 0, gst: 0, pst: 0, total: 0, wholesale: false, cart_discount: false });
+                if (typeof result.held_count !== 'undefined') updateHoldBadge(result.held_count);
+            }
+            // Open held orders modal (whether cart was empty or just held)
+            await openHeldOrdersModal();
         });
     }
 
@@ -728,7 +1079,7 @@
         if (items.length === 0) return;
         const last = items[items.length - 1];
         const line1 = last.product_name.substring(0, 20);
-        const line2 = '$' + parseFloat(cartData.total).toFixed(2);
+        const line2 = '$' + parseFloat(last.subtotal || last.line_total || 0).toFixed(2);
 
         localPrint('/pole-display', { line1, line2 });
     }

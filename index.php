@@ -21,7 +21,14 @@ require_once APP_PATH . '/models/Modifier.php';
 require_once APP_PATH . '/models/Terminal.php';
 require_once APP_PATH . '/models/PosSetting.php';
 require_once APP_PATH . '/models/StandaloneRefund.php';
+require_once APP_PATH . '/models/PettyCash.php';
 require_once APP_PATH . '/models/TempAuth.php';
+require_once APP_PATH . '/models/WebOrder.php';
+require_once APP_PATH . '/models/HeldOrder.php';
+require_once APP_PATH . '/models/Moneris.php';
+require_once APP_PATH . '/models/GiftCardSale.php';
+require_once APP_PATH . '/models/ScheduleAttendance.php';
+require_once APP_PATH . '/models/DayClose.php';
 
 // Helpers
 require_once APP_PATH . '/helpers/csrf_helper.php';
@@ -43,9 +50,11 @@ require_once APP_PATH . '/controllers/TerminalController.php';
 require_once APP_PATH . '/controllers/ManualEntryController.php';
 require_once APP_PATH . '/controllers/TempAuthController.php';
 require_once APP_PATH . '/controllers/ApiController.php';
+require_once APP_PATH . '/controllers/DayCloseController.php';
 
 // ── Session ───────────────────────────────────────────────────────────────────
 if (session_status() === PHP_SESSION_NONE) {
+    ini_set('session.gc_maxlifetime', SESSION_TIMEOUT_DEFAULT * 60); // match POS timeout (8 hr)
     session_start();
 }
 
@@ -53,19 +62,11 @@ if (session_status() === PHP_SESSION_NONE) {
 if (isset($_SESSION['pos_user_id'])) {
     $lastActivity = $_SESSION['last_activity'] ?? time();
     if ((time() - $lastActivity) > (SESSION_TIMEOUT_DEFAULT * 60)) {
-        $shiftId    = $_SESSION['pos_shift_id'] ?? null;
-        $terminalId = $_SESSION['pos_terminal_id'] ?? null;
         session_unset();
         session_destroy();
         session_start();
-        if ($shiftId) {
-            $_SESSION['locked_shift_id'] = $shiftId;
-        }
-        if ($terminalId) {
-            $_SESSION['pos_terminal_id'] = $terminalId;
-        }
         $_SESSION['flash_error'] = 'Your session has expired. Please log in again.';
-        redirect('/login');
+        redirect('/pin');
     }
     $_SESSION['last_activity'] = time();
 }
@@ -147,11 +148,23 @@ function dispatch(string $url): void {
             $sc = new ShiftController();
             match ($seg1) {
                 'open'    => $sc->open(),
-                'close'   => $sc->close(),
                 'report'  => (function() use ($sc, $seg2) { $_GET['id'] = $seg2; $sc->report(); })(),
+                'edit'    => (function() use ($sc, $seg2) { $_GET['id'] = $seg2; $sc->edit(); })(),
                 'history' => $sc->history(),
                 default   => redirect('/shift/open'),
             };
+            break;
+
+        // Terminal binding for a physical POS machine. Sets cookie and redirects to /.
+        // Safe to call on every boot — cookie just gets renewed. Kiosk URL can be this.
+        case 'set-terminal':
+            $tid = (int)$seg1;
+            if ($tid > 0) {
+                setcookie('pos_terminal_id', (string)$tid, time() + (86400 * 365 * 10), '/');
+                header('Location: /');
+                exit;
+            }
+            echo '<h1>Usage: /set-terminal/{id}</h1>';
             break;
 
         // Transactions
@@ -162,6 +175,7 @@ function dispatch(string $url): void {
                 'void'           => $tc->void(),
                 'refund'         => $tc->refund(),
                 'refund-receipt' => (function() use ($tc, $seg2) { $_GET['id'] = $seg2; $tc->refundReceipt(); })(),
+                'change-payment' => $tc->changePayment(),
                 default          => $tc->index(),
             };
             break;
@@ -174,6 +188,8 @@ function dispatch(string $url): void {
                 'monthly'            => $rc->monthly(),
                 'product-sales'      => $rc->productSales(),
                 'transaction-search' => $rc->transactionSearch(),
+                'hourly-sales'       => $rc->hourlySales(),
+                'cash-spot-check'    => $rc->cashSpotCheck(),
                 default              => $rc->daily(),
             };
             break;
@@ -193,8 +209,9 @@ function dispatch(string $url): void {
         case 'products':
             $pc = new ProductController();
             match ($seg1) {
-                'update-price'      => $pc->updatePrice(),
-                'toggle-visibility' => $pc->toggleVisibility(),
+                'update-price'           => $pc->updatePrice(),
+                'update-wholesale-price' => $pc->updateWholesalePrice(),
+                'toggle-visibility'      => $pc->toggleVisibility(),
                 default             => $pc->index(),
             };
             break;
@@ -255,6 +272,56 @@ function dispatch(string $url): void {
             };
             break;
 
+        // Session keep-alive (no auth required — just prevents PHP GC)
+        case 'keep-alive':
+            header('Content-Type: application/json');
+            echo json_encode(['ok' => true]);
+            break;
+
+        // DayClose status check (no auth — polled by POS stations)
+        case 'dayclose-status':
+            header('Content-Type: application/json');
+            $terminalId = (int)($_COOKIE['pos_terminal_id'] ?? 0);
+            if (!$terminalId) {
+                echo json_encode(['dayclose_complete' => false, 'shift_open' => false]);
+                break;
+            }
+            $today = date('Y-m-d');
+            $dc = (new DayClose())->getCountByDate($today);
+            $complete = $dc && $dc['status'] === 'completed';
+            $shift = (new Shift())->getOpenForTerminal($terminalId);
+            echo json_encode([
+                'dayclose_complete' => $complete,
+                'shift_open'        => (bool)$shift,
+                'shift_id'          => $shift ? (int)$shift['id'] : null,
+            ]);
+            break;
+
+        // DayClose register close (no auth — called from POS overlay)
+        case 'dayclose-close':
+            header('Content-Type: application/json');
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                echo json_encode(['success' => false, 'error' => 'POST required']);
+                break;
+            }
+            $shiftModel = new Shift();
+            $terminalId = (int)($_COOKIE['pos_terminal_id'] ?? 0);
+            if ($terminalId) {
+                $shift = $shiftModel->getOpenForTerminal($terminalId);
+                if ($shift) {
+                    $closedBy = $_SESSION['pos_operator_id'] ?? $_SESSION['pos_user_id'] ?? null;
+                    $db = getDB();
+                    $db->prepare("UPDATE pos_shifts SET status = 'closed', closed_at = NOW(), closed_by = ? WHERE id = ? AND status = 'open'")
+                       ->execute([$closedBy, (int)$shift['id']]);
+                    $shiftModel->clearHeartbeat((int)$shift['id']);
+                    (new HeldOrder())->expireForShift((int)$shift['id']);
+                }
+            }
+            unset($_SESSION['pos_shift_id'], $_SESSION['pos_terminal_id']);
+            clearOperator();
+            echo json_encode(['success' => true]);
+            break;
+
         // API (JSON endpoints)
         case 'api':
             $api = new ApiController();
@@ -273,13 +340,42 @@ function dispatch(string $url): void {
                 'verify-manager-pin/' => $api->verifyManagerPin(),
                 'standalone-refund/'  => $api->standaloneRefund(),
                 'pole-display/'    => $api->poleDisplay(),
+                'petty-cash/add'   => $api->pettyCashAdd(),
+                'petty-cash/list'  => $api->pettyCashList(),
                 'temp-auth/verify' => $api->verifyTempAuth(),
                 'temp-auth/generate' => $api->generateTempAuth(),
+                'hold/save'    => $api->holdSave(),
+                'hold/list'    => $api->holdList(),
+                'hold/resume'  => $api->holdResume(),
+                'hold/delete'  => $api->holdDelete(),
+                'hold/count'   => $api->holdCount(),
+                'moneris/purchase' => $api->monerisPurchase(),
+                'moneris/void'     => $api->monerisVoid(),
+                'moneris/status'   => $api->monerisStatus(),
+                'gift-card-sales/add'  => $api->giftCardSalesAdd(),
+                'gift-card-sales/list' => $api->giftCardSalesList(),
+                'currency/usd'         => $api->currencyUsd(),
+                'heartbeat/'           => $api->heartbeat(),
                 default            => (function() {
                     http_response_code(404);
                     header('Content-Type: application/json');
                     echo json_encode(['error' => 'Not found']);
                 })(),
+            };
+            break;
+
+        // DayClose (embedded cash counting)
+        case 'dayclose':
+            $dcc = new DayCloseController();
+            match ($seg1) {
+                'count'        => $dcc->count(),
+                'summary'      => $dcc->summary(),
+                'history'      => $dcc->history(),
+                'check-date'   => $dcc->checkDate(),
+                'save'         => $dcc->save(),
+                'heartbeat'    => $dcc->heartbeat(),
+                'release-lock' => $dcc->releaseLock(),
+                default        => $dcc->index(),
             };
             break;
 

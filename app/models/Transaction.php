@@ -27,13 +27,16 @@ class Transaction extends BaseModel {
             }
             $total = round($subtotal + $gstTotal + $pstTotal, 2);
 
+            // Check global inventory sync setting
+            $inventorySyncEnabled = (new PosSetting())->get('inventory_sync_enabled', '1') === '1';
+
             // Insert transaction
             $terminalId = $_SESSION['pos_terminal_id'] ?? null;
             $txnDiscountPct = $cartDiscount ? 10 : 0;
             $txnId = (int)$this->insert(
-                'INSERT INTO pos_transactions (shift_id, user_id, terminal_id, subtotal, gst_amount, pst_amount, total, status, is_wholesale, discount_percent)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [$shiftId, $userId, $terminalId, round($subtotal, 2), round($gstTotal, 2), round($pstTotal, 2), $total, 'completed', $wholesale ? 1 : 0, $txnDiscountPct]
+                'INSERT INTO pos_transactions (shift_id, user_id, terminal_id, subtotal, gst_amount, pst_amount, total, status, is_wholesale, discount_percent, inventory_synced)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [$shiftId, $userId, $terminalId, round($subtotal, 2), round($gstTotal, 2), round($pstTotal, 2), $total, 'completed', $wholesale ? 1 : 0, $txnDiscountPct, $inventorySyncEnabled ? 1 : 0]
             );
 
             // Insert items + deduct inventory
@@ -85,8 +88,8 @@ class Transaction extends BaseModel {
                     $modifierModel->saveTransactionItemModifiers($itemId, $item['modifiers']);
                 }
 
-                // Deduct inventory only for tracked products
-                if (($trackMap[(int)$item['product_id']] ?? 1) === 1) {
+                // Deduct inventory only for tracked products when sync is enabled
+                if ($inventorySyncEnabled && ($trackMap[(int)$item['product_id']] ?? 1) === 1) {
                     [$before, $after] = $inventory->adjustStock(
                         $item['product_id'],
                         $locationId,
@@ -110,9 +113,9 @@ class Transaction extends BaseModel {
             // Insert payments
             foreach ($payments as $pay) {
                 $this->insert(
-                    'INSERT INTO pos_payments (transaction_id, method, amount, reference)
-                     VALUES (?, ?, ?, ?)',
-                    [$txnId, $pay['method'], $pay['amount'], $pay['reference'] ?? null]
+                    'INSERT INTO pos_payments (transaction_id, method, amount, reference, moneris_transaction_id)
+                     VALUES (?, ?, ?, ?, ?)',
+                    [$txnId, $pay['method'], $pay['amount'], $pay['reference'] ?? null, $pay['moneris_transaction_id'] ?? null]
                 );
             }
 
@@ -365,45 +368,48 @@ class Transaction extends BaseModel {
                 ['voided', $voidedBy, $reason, $customerName ?: null, $txnId]
             );
 
-            // Reverse inventory
-            $items     = $this->getItems($txnId);
-            $inventory = new Inventory();
-            $audit     = new AuditLog();
+            // Reverse inventory only if it was synced on creation
+            $inventorySynced = (int)($txn['inventory_synced'] ?? 1);
+            if ($inventorySynced) {
+                $items     = $this->getItems($txnId);
+                $inventory = new Inventory();
+                $audit     = new AuditLog();
 
-            // Batch-fetch track_inventory flags
-            $productIds = array_unique(array_column($items, 'product_id'));
-            $trackMap = [];
-            if ($productIds) {
-                $placeholders = implode(',', array_fill(0, count($productIds), '?'));
-                $rows = $this->findAll(
-                    "SELECT id, track_inventory FROM products WHERE id IN ($placeholders)",
-                    array_values($productIds)
-                );
-                foreach ($rows as $r) {
-                    $trackMap[(int)$r['id']] = (int)$r['track_inventory'];
+                // Batch-fetch track_inventory flags
+                $productIds = array_unique(array_column($items, 'product_id'));
+                $trackMap = [];
+                if ($productIds) {
+                    $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+                    $rows = $this->findAll(
+                        "SELECT id, track_inventory FROM products WHERE id IN ($placeholders)",
+                        array_values($productIds)
+                    );
+                    foreach ($rows as $r) {
+                        $trackMap[(int)$r['id']] = (int)$r['track_inventory'];
+                    }
                 }
-            }
 
-            foreach ($items as $item) {
-                if (($trackMap[(int)$item['product_id']] ?? 1) === 0) continue;
+                foreach ($items as $item) {
+                    if (($trackMap[(int)$item['product_id']] ?? 1) === 0) continue;
 
-                [$before, $after] = $inventory->adjustStock(
-                    $item['product_id'],
-                    $locationId,
-                    $item['quantity'] // positive = return to stock
-                );
+                    [$before, $after] = $inventory->adjustStock(
+                        $item['product_id'],
+                        $locationId,
+                        $item['quantity'] // positive = return to stock
+                    );
 
-                $audit->record(
-                    $voidedBy,
-                    $item['product_id'],
-                    $locationId,
-                    'pos_void',
-                    $before,
-                    $item['quantity'],
-                    $after,
-                    "Void: $reason",
-                    $txnId
-                );
+                    $audit->record(
+                        $voidedBy,
+                        $item['product_id'],
+                        $locationId,
+                        'pos_void',
+                        $before,
+                        $item['quantity'],
+                        $after,
+                        "Void: $reason",
+                        $txnId
+                    );
+                }
             }
 
             $this->commit();
@@ -458,20 +464,32 @@ class Transaction extends BaseModel {
 
     public function getForShift(int $shiftId): array {
         return $this->findAll(
-            'SELECT t.*, u.username
+            "SELECT t.*, u.username,
+                    CASE WHEN (SELECT SUM(p.amount) FROM pos_payments p WHERE p.transaction_id = t.id AND p.method = 'cash') > 0
+                         THEN LEAST(t.total, (SELECT SUM(p.amount) FROM pos_payments p WHERE p.transaction_id = t.id AND p.method = 'cash'))
+                         ELSE 0 END AS cash_amount,
+                    CASE WHEN (SELECT SUM(p.amount) FROM pos_payments p WHERE p.transaction_id = t.id AND p.method != 'cash') > 0
+                         THEN (SELECT SUM(p.amount) FROM pos_payments p WHERE p.transaction_id = t.id AND p.method != 'cash')
+                         ELSE 0 END AS charge_amount
              FROM pos_transactions t
              JOIN pos_users u ON t.user_id = u.id
              WHERE t.shift_id = ?
-             ORDER BY t.created_at DESC',
+             ORDER BY t.created_at DESC",
             [$shiftId]
         );
     }
 
     public function getRecent(int $limit = 50, ?string $dateFrom = null, ?string $dateTo = null, ?int $terminalId = null, string $customerName = ''): array {
-        $sql = 'SELECT t.*, u.username, s.id AS shift_number
+        $sql = "SELECT t.*, u.username, s.id AS shift_number,
+                    CASE WHEN (SELECT SUM(p.amount) FROM pos_payments p WHERE p.transaction_id = t.id AND p.method = 'cash') > 0
+                         THEN LEAST(t.total, (SELECT SUM(p.amount) FROM pos_payments p WHERE p.transaction_id = t.id AND p.method = 'cash'))
+                         ELSE 0 END AS cash_amount,
+                    CASE WHEN (SELECT SUM(p.amount) FROM pos_payments p WHERE p.transaction_id = t.id AND p.method != 'cash') > 0
+                         THEN (SELECT SUM(p.amount) FROM pos_payments p WHERE p.transaction_id = t.id AND p.method != 'cash')
+                         ELSE 0 END AS charge_amount
                 FROM pos_transactions t
                 JOIN pos_users u ON t.user_id = u.id
-                JOIN pos_shifts s ON t.shift_id = s.id';
+                JOIN pos_shifts s ON t.shift_id = s.id";
         $params = [];
 
         if ($customerName !== '') {
@@ -488,6 +506,10 @@ class Transaction extends BaseModel {
         if ($dateTo) {
             $sql .= ' AND DATE(t.created_at) <= ?';
             $params[] = $dateTo;
+        }
+        if ($terminalId) {
+            $sql .= ' AND t.terminal_id = ?';
+            $params[] = $terminalId;
         }
         if ($customerName !== '') {
             $like = '%' . $customerName . '%';
@@ -585,8 +607,8 @@ class Transaction extends BaseModel {
      */
     public function insertManualEntry(array $data): int {
         return (int)$this->insert(
-            'INSERT INTO pos_transactions (shift_id, user_id, terminal_id, subtotal, gst_amount, pst_amount, total, status, is_manual_entry, transaction_count, notes, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)',
+            'INSERT INTO pos_transactions (shift_id, user_id, terminal_id, subtotal, gst_amount, pst_amount, tip_amount, total, status, is_manual_entry, transaction_count, notes, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)',
             [
                 $data['shift_id'],
                 $data['user_id'],
@@ -594,6 +616,7 @@ class Transaction extends BaseModel {
                 $data['subtotal'],
                 $data['gst_amount'],
                 $data['pst_amount'],
+                $data['tip_amount'] ?? null,
                 $data['total'],
                 'completed',
                 $data['transaction_count'] ?? null,
@@ -785,6 +808,25 @@ class Transaction extends BaseModel {
         usort($triples, $sortByDiff);
 
         return ['pairs' => $pairs, 'triples' => $triples, 'transactions_checked' => $count];
+    }
+
+    public function getHourlySales(string $dateFrom, string $dateTo, ?int $terminalId = null): array {
+        $sql = "SELECT HOUR(created_at) AS hour,
+                       COUNT(*) AS count,
+                       COALESCE(SUM(subtotal), 0) AS subtotal,
+                       COALESCE(SUM(gst_amount), 0) AS gst,
+                       COALESCE(SUM(pst_amount), 0) AS pst,
+                       COALESCE(SUM(total), 0) AS total
+                FROM pos_transactions
+                WHERE DATE(created_at) >= ? AND DATE(created_at) <= ?
+                  AND status IN ('completed','partial_refund')";
+        $params = [$dateFrom, $dateTo];
+        if ($terminalId) {
+            $sql .= ' AND terminal_id = ?';
+            $params[] = $terminalId;
+        }
+        $sql .= ' GROUP BY HOUR(created_at) ORDER BY hour';
+        return $this->findAll($sql, $params);
     }
 
     public function getProductSales(?string $dateFrom = null, ?string $dateTo = null, ?int $terminalId = null): array {
