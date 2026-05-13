@@ -10,9 +10,9 @@ const COINS = {
 };
 const BILLS = [100, 50, 20, 10, 5];
 const REGISTERS = [
-    { id: 'r1', name: 'Loose Tea', shortName: 'R1', hasTips: false, hasRegisterTape: false, hasMailOrders: true },
-    { id: 'r2', name: 'Tea Bar',   shortName: 'R2', hasTips: true,  hasRegisterTape: false, hasMailOrders: false },
-    { id: 'r3', name: 'Ice Tea',   shortName: 'R3', hasTips: true,  hasRegisterTape: true,  hasMailOrders: false },
+    { id: 'r1', name: 'Loose Tea', shortName: 'R1', hasTips: false, hasRegisterTape: false },
+    { id: 'r2', name: 'Tea Bar',   shortName: 'R2', hasTips: true,  hasRegisterTape: false },
+    { id: 'r3', name: 'Ice Tea',   shortName: 'R3', hasTips: true,  hasRegisterTape: true  },
 ];
 const FLOAT_TARGETS = { r1: 100, r2: 100, r3: 150 };
 // bills_fixed: target is always in bills, coins are extra on top
@@ -26,7 +26,6 @@ let state = {
     tips: { r2: '', r3: '' },
     cardBatch: { r1: '', r2: '', r3: '' },
     registerTape: { total_sales: '', txn_count: '', gst: '', cash_sales: '', card_sales: '' },
-    mailOrders: { amount: '', count: '' },
 };
 
 function initState() {
@@ -40,7 +39,6 @@ function initState() {
     state.tips = { r2: '', r3: '' };
     state.cardBatch = { r1: '', r2: '', r3: '' };
     state.registerTape = { total_sales: '', txn_count: '', gst: '', cash_sales: '', card_sales: '' };
-    state.mailOrders = { amount: '', count: '' };
 }
 initState();
 
@@ -75,10 +73,6 @@ if (typeof PREFILL !== 'undefined' && PREFILL) {
         Object.keys(state.registerTape).forEach(k => {
             if (PREFILL.registerTape[k] !== undefined) state.registerTape[k] = PREFILL.registerTape[k];
         });
-    }
-    if (PREFILL.mailOrders) {
-        if (PREFILL.mailOrders.amount !== undefined) state.mailOrders.amount = PREFILL.mailOrders.amount;
-        if (PREFILL.mailOrders.count !== undefined) state.mailOrders.count = PREFILL.mailOrders.count;
     }
 }
 // Initial state from embedded count.php script block (when no PREFILL)
@@ -334,24 +328,6 @@ function buildExtras(reg) {
         html += `</div></div>`;
     }
 
-    if (reg.hasMailOrders) {
-        html += `<div class="card shadow-sm mt-2">
-            <div class="card-body p-3">
-                <div class="section-header">Mail Orders</div>
-                <div class="denom-row">
-                    <span class="denom-label">Amount $</span>
-                    <input type="number" min="0" step="0.01" class="denom-input extras-mail"
-                           data-mail="amount" value="${state.mailOrders.amount || ''}" inputmode="decimal">
-                </div>
-                <div class="denom-row">
-                    <span class="denom-label">Count</span>
-                    <input type="number" min="0" class="denom-input extras-mail"
-                           data-mail="count" value="${state.mailOrders.count || ''}" inputmode="numeric">
-                </div>
-            </div>
-        </div>`;
-    }
-
     return html;
 }
 
@@ -391,11 +367,6 @@ function attachCountListeners() {
     document.querySelectorAll('.extras-tape').forEach(inp => {
         inp.addEventListener('input', function() {
             state.registerTape[this.dataset.tape] = this.value;
-        });
-    });
-    document.querySelectorAll('.extras-mail').forEach(inp => {
-        inp.addEventListener('input', function() {
-            state.mailOrders[this.dataset.mail] = this.value;
         });
     });
 }
@@ -482,10 +453,6 @@ function showConfirmModal() {
             if (rt.card_sales) html += `<div class="d-flex justify-content-between"><span>Card Sales</span><span>${fmt(parseFloat(rt.card_sales) || 0)}</span></div>`;
             html += `</div>`;
         }
-        if (reg.hasMailOrders && state.mailOrders.amount) {
-            html += `<div class="d-flex justify-content-between mt-1"><span>Mail Orders</span><span class="fw-bold">${fmt(parseFloat(state.mailOrders.amount) || 0)} (${state.mailOrders.count || 0})</span></div>`;
-        }
-
         html += '</div>';
     });
     html += '</div>';
@@ -812,8 +779,6 @@ function submitClose() {
         r3_gst: state.registerTape.gst || null,
         r3_cash: state.registerTape.cash_sales || null,
         r3_card: state.registerTape.card_sales || null,
-        r1_mail_order_amount: state.mailOrders.amount || null,
-        r1_mail_order_count: state.mailOrders.count || null,
     };
 
     const btn = document.querySelector('#screenFloat .btn-tan');

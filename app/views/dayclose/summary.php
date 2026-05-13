@@ -145,13 +145,6 @@ foreach ($floats as $f) {
                 </div>
             <?php endif; ?>
         <?php endif; ?>
-        <?php // R1 mail orders ?>
-        <?php if ($regId === 'r1' && (!empty($count['r1_mail_order_amount']) || !empty($count['r1_mail_order_count']))): ?>
-            <div class="mt-2 pt-2" style="border-top:1px solid #e0ddd5;">
-                <strong>Mail Orders:</strong> $<?= number_format((float)($count['r1_mail_order_amount'] ?? 0), 2) ?>
-                (<?= (int)($count['r1_mail_order_count'] ?? 0) ?> orders)
-            </div>
-        <?php endif; ?>
     </div>
     <?php endforeach; ?>
 
