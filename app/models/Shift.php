@@ -9,7 +9,7 @@ class Shift extends BaseModel {
         );
     }
 
-    public function close(int $shiftId, float $closingCash, ?string $notes = null, ?float $closingCard = null, ?float $closingTips = null, ?float $cashDeposit = null): array {
+    public function close(int $shiftId, float $closingCash, ?string $notes = null, ?float $closingCard = null, ?float $closingTips = null, ?float $cashDeposit = null, ?int $closedBy = null): array {
         $shift = $this->findById($shiftId);
         if (!$shift) throw new RuntimeException('Shift not found.');
 
@@ -36,9 +36,9 @@ class Shift extends BaseModel {
             'UPDATE pos_shifts
              SET closed_at = NOW(), closing_cash = ?, expected_cash = ?,
                  over_short = ?, cash_deposit = ?, closing_card = ?, expected_card = ?,
-                 card_over_short = ?, closing_tips = ?, status = ?, notes = ?
+                 card_over_short = ?, closing_tips = ?, status = ?, notes = ?, closed_by = ?
              WHERE id = ?',
-            [$closingCash, $expected, $overShort, $cashDeposit, $closingCard, $expectedCard, $cardOverShort, $closingTips, 'closed', $notes, $shiftId]
+            [$closingCash, $expected, $overShort, $cashDeposit, $closingCard, $expectedCard, $cardOverShort, $closingTips, 'closed', $notes, $closedBy, $shiftId]
         );
 
         // Reset negative shop stock to zero

@@ -385,7 +385,8 @@ class DayClose extends BaseModel {
                     'Closed via Close Registers',   // notes
                     $vals['card'],                  // closingCard
                     $vals['tips'],                  // closingTips
-                    $vals['deposit']                // cashDeposit
+                    $vals['deposit'],               // cashDeposit
+                    $closedBy ? (int)$closedBy : null
                 );
             } catch (\Throwable $e) {
                 error_log("Close Registers closeShifts ($reg) failed: " . $e->getMessage());
