@@ -283,17 +283,41 @@ function dispatch(string $url): void {
             header('Content-Type: application/json');
             $terminalId = (int)($_COOKIE['pos_terminal_id'] ?? 0);
             if (!$terminalId) {
-                echo json_encode(['dayclose_complete' => false, 'shift_open' => false]);
+                echo json_encode([
+                    'dayclose_complete' => false,
+                    'shift_open' => false,
+                    'needs_close' => false,
+                ]);
                 break;
             }
             $today = date('Y-m-d');
             $dc = (new DayClose())->getCountByDate($today);
             $complete = $dc && $dc['status'] === 'completed';
-            $shift = (new Shift())->getOpenForTerminal($terminalId);
+            $shiftModel = new Shift();
+            $shift = $shiftModel->getOpenForTerminal($terminalId);
+
+            // needs_close: definitive server-side signal that this POS session
+            // still references a shift closed today and dayclose is complete.
+            // Bypasses the client-side sawShiftOpen race when the page was
+            // loaded (or reloaded) after Save & Complete already closed shifts.
+            $needsClose = false;
+            $sessionShiftId = (int)($_SESSION['pos_shift_id'] ?? 0);
+            if ($complete && !$shift && $sessionShiftId) {
+                $sessionShift = $shiftModel->findById($sessionShiftId);
+                if ($sessionShift
+                    && (int)$sessionShift['terminal_id'] === $terminalId
+                    && $sessionShift['status'] === 'closed'
+                    && !empty($sessionShift['closed_at'])
+                    && substr((string)$sessionShift['closed_at'], 0, 10) === $today) {
+                    $needsClose = true;
+                }
+            }
+
             echo json_encode([
                 'dayclose_complete' => $complete,
                 'shift_open'        => (bool)$shift,
-                'shift_id'          => $shift ? (int)$shift['id'] : null,
+                'shift_id'          => $shift ? (int)$shift['id'] : ($needsClose ? $sessionShiftId : null),
+                'needs_close'       => $needsClose,
             ]);
             break;
 

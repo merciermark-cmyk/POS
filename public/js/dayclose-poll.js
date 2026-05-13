@@ -10,10 +10,11 @@
     var base = document.querySelector('meta[name="base-url"]')?.content || '/';
     var polling = null;
     var overlayShown = false;
-    // Track whether this polling session has ever seen the shift open.
-    // Only fire the overlay if we previously saw an open shift on this terminal
-    // (i.e., the close happened during this staff session). Suppresses the
-    // overlay on a fresh login the day of an already-completed close.
+    // Legacy guard kept as a fallback in case the server-side `needs_close`
+    // signal is unavailable (e.g., session has no pos_shift_id). The primary
+    // trigger is now `data.needs_close` from the server, which definitively
+    // detects "this POS still owns a closed-today shift" without depending
+    // on what the page happened to observe before the close fired.
     var sawShiftOpen = false;
 
     function checkStatus() {
@@ -21,7 +22,9 @@
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (data.shift_open) sawShiftOpen = true;
-                if (data.dayclose_complete && sawShiftOpen && !overlayShown) {
+                var shouldFire = data.needs_close ||
+                    (data.dayclose_complete && sawShiftOpen);
+                if (shouldFire && !overlayShown) {
                     clearInterval(polling);
                     showOverlay(data.shift_id);
                 }
