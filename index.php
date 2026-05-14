@@ -167,6 +167,32 @@ function dispatch(string $url): void {
             echo '<h1>Usage: /set-terminal/{id}</h1>';
             break;
 
+        // Diagnostic: show which terminal this machine is bound to.
+        // Read-only, no auth, no buttons. Safe to open on any POS.
+        case 'whoami':
+            $tid = (int)($_COOKIE['pos_terminal_id'] ?? 0);
+            $name = 'NOT BOUND';
+            $ip = '';
+            if ($tid > 0) {
+                $row = (new Terminal())->findById($tid);
+                if ($row) {
+                    $name = $row['name'];
+                    $ip = $row['ip_address'] ?? '';
+                }
+            }
+            $bg = $tid === 1 ? '#0d6efd' : ($tid === 2 ? '#198754' : '#6c757d');
+            header('Content-Type: text/html; charset=utf-8');
+            echo '<!doctype html><html><head><title>Terminal ' . (int)$tid . '</title>';
+            echo '<meta name="viewport" content="width=device-width,initial-scale=1">';
+            echo '<style>body{margin:0;font-family:system-ui,sans-serif;background:' . $bg . ';color:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center}h1{font-size:8rem;margin:0}h2{font-size:2.5rem;margin:1rem 0;font-weight:400}p{font-size:1.1rem;opacity:.85;margin:.3rem 0}</style>';
+            echo '</head><body><div><h1>Terminal ' . (int)$tid . '</h1>';
+            echo '<h2>' . htmlspecialchars($name) . '</h2>';
+            echo '<p>Cookie: pos_terminal_id = ' . ((int)$tid ?: '(none)') . '</p>';
+            if ($ip) echo '<p>Configured IP: ' . htmlspecialchars($ip) . '</p>';
+            echo '<p>Client IP: ' . htmlspecialchars($_SERVER['REMOTE_ADDR'] ?? '') . '</p>';
+            echo '</div></body></html>';
+            break;
+
         // Transactions
         case 'transactions':
             $tc = new TransactionController();
