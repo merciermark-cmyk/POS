@@ -53,14 +53,13 @@ ob_start();
         <p class="text-muted text-center">No active terminals configured.</p>
     <?php endif; ?>
 
+    <?php if (isManager()): ?>
     <hr class="my-3">
     <div class="d-grid gap-2" style="max-width:300px; margin:0 auto">
-        <a href="<?= baseUrl('manual-entry') ?>" class="btn btn-outline-secondary">Manual Entry</a>
-        <?php if (isManager()): ?>
-            <a href="<?= baseUrl('reports/daily') ?>" class="btn btn-outline-secondary">Reports</a>
-            <a href="<?= baseUrl('shift/history') ?>" class="btn btn-outline-secondary">Shift History</a>
-        <?php endif; ?>
+        <a href="<?= baseUrl('reports/daily') ?>" class="btn btn-outline-secondary">Reports</a>
+        <a href="<?= baseUrl('shift/history') ?>" class="btn btn-outline-secondary">Shift History</a>
     </div>
+    <?php endif; ?>
 </div>
 
 <script>

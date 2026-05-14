@@ -31,9 +31,6 @@ $currentPath = $_GET['url'] ?? '';
                         <a class="nav-link" href="<?= baseUrl('transactions') ?>">Transactions</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="<?= baseUrl('manual-entry') ?>">Manual Entry</a>
-                    </li>
-                    <li class="nav-item">
                         <a class="nav-link <?= str_starts_with($currentPath, 'dayclose') ? 'active' : '' ?>"
                            href="<?= baseUrl('dayclose') ?>">Close Registers</a>
                     </li>
