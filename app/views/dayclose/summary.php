@@ -271,3 +271,29 @@ foreach ($floats as $f) {
     </div>
 
 </div>
+
+<?php if (!empty($_GET['fresh'])): ?>
+<div id="returnBanner" class="alert alert-info text-center" style="position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);box-shadow:0 4px 12px rgba(0,0,0,0.15);min-width:340px;">
+    Returning to POS in <span id="countdown">8</span>s
+    <button type="button" class="btn btn-sm btn-outline-secondary ms-3" onclick="cancelReturn()">Stay</button>
+</div>
+<script>
+(function () {
+    var secs = 8;
+    var el = document.getElementById('countdown');
+    var timer = setInterval(function () {
+        secs--;
+        if (el) el.textContent = secs;
+        if (secs <= 0) {
+            clearInterval(timer);
+            window.location.href = '<?= baseUrl('/') ?>';
+        }
+    }, 1000);
+    window.cancelReturn = function () {
+        clearInterval(timer);
+        var b = document.getElementById('returnBanner');
+        if (b) b.remove();
+    };
+})();
+</script>
+<?php endif; ?>

@@ -792,7 +792,7 @@ function submitClose() {
     .then(r => r.json())
     .then(data => {
         if (data.success) {
-            window.location.href = BASE_URL + 'dayclose/summary?date=' + encodeURIComponent(state.date);
+            window.location.href = BASE_URL + 'dayclose/summary?date=' + encodeURIComponent(state.date) + '&fresh=1';
         } else {
             alert('Error: ' + (data.error || 'Unknown error'));
             if (btn) { btn.disabled = false; btn.textContent = 'Save & Complete'; }
