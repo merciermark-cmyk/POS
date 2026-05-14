@@ -272,14 +272,32 @@ class Shift extends BaseModel {
     }
 
     public function getHistory(int $limit = 50, ?int $terminalId = null): array {
+        // R3 (terminal_id=3) is the analog register — it has no real transactions,
+        // so Sales/Txns/over_short come from the manual Z-tape entries on
+        // dayclose_counts (joined by close_date). For R1/R2 those fields stay
+        // derived from pos_transactions and pos_shifts.over_short.
         $sql = "SELECT s.*, u.username, tm.name AS terminal_name,
                     cu.username AS closed_by_name,
-                    (SELECT COUNT(*) FROM pos_transactions t WHERE t.shift_id = s.id AND t.status IN ('completed','partial_refund')) AS transaction_count,
-                    (SELECT COALESCE(SUM(t.total), 0) FROM pos_transactions t WHERE t.shift_id = s.id AND t.status IN ('completed','partial_refund')) AS total_sales
+                    CASE WHEN s.terminal_id = 3 THEN COALESCE(dc.r3_txn_count, 0)
+                         ELSE (SELECT COUNT(*) FROM pos_transactions t WHERE t.shift_id = s.id AND t.status IN ('completed','partial_refund'))
+                    END AS transaction_count,
+                    CASE WHEN s.terminal_id = 3 THEN COALESCE(dc.r3_total_sales, 0)
+                         ELSE (SELECT COALESCE(SUM(t.total), 0) FROM pos_transactions t WHERE t.shift_id = s.id AND t.status IN ('completed','partial_refund'))
+                    END AS total_sales,
+                    CASE WHEN s.terminal_id = 3
+                              AND dc.r3_card_batch IS NOT NULL
+                              AND dc.r3_card IS NOT NULL
+                         THEN ROUND(dc.r3_card_batch - dc.r3_card, 2)
+                         ELSE s.over_short
+                    END AS over_short
              FROM pos_shifts s
              JOIN pos_users u ON s.user_id = u.id
              LEFT JOIN pos_users cu ON s.closed_by = cu.id
-             LEFT JOIN pos_terminals tm ON s.terminal_id = tm.id";
+             LEFT JOIN pos_terminals tm ON s.terminal_id = tm.id
+             LEFT JOIN dayclose_counts dc
+                    ON s.terminal_id = 3
+                   AND DATE(s.closed_at) = dc.close_date
+                   AND dc.status = 'completed'";
         $params = [];
 
         if ($terminalId) {

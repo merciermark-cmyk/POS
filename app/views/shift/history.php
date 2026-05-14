@@ -50,6 +50,9 @@ ob_start();
                         <span class="<?= $s['over_short'] >= 0 ? 'text-success' : 'text-danger' ?>">
                             $<?= number_format($s['over_short'], 2) ?>
                         </span>
+                        <?php if ((int)$s['terminal_id'] === 3): ?>
+                            <small class="text-muted" title="R3 reconciliation: Moneris batch vs Z-tape card">(card)</small>
+                        <?php endif; ?>
                     <?php else: ?>—<?php endif; ?>
                 </td>
                 <td>
