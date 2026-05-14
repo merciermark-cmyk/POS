@@ -296,33 +296,30 @@ function dispatch(string $url): void {
             $shiftModel = new Shift();
             $shift = $shiftModel->getOpenForTerminal($terminalId);
 
-            // needs_close: definitive server-side signal that this terminal
-            // had a shift that closed today and dayclose is complete — i.e.
-            // someone on this physical POS still needs to press Complete
-            // Close to clear their session. Terminal-keyed (not session-keyed)
-            // so it survives Chrome restart, screen sleep, or a session
-            // that lost pos_shift_id between morning open and tonight's close.
+            // needs_close: definitive server-side signal that this POS session
+            // still references a shift closed today and dayclose is complete.
+            // Bypasses the client-side sawShiftOpen race when the page was
+            // loaded (or reloaded) after Save & Complete already closed shifts.
+            // Session-keyed (not terminal-keyed) so we don't fire on manager
+            // laptops / dev machines that happen to have a pos_terminal_id
+            // cookie set but no active shift session on this device.
             $needsClose = false;
-            $closedShiftId = null;
-            if ($complete && !$shift) {
-                $stmt = getDB()->prepare(
-                    "SELECT id FROM pos_shifts
-                     WHERE terminal_id = ? AND status = 'closed'
-                       AND DATE(closed_at) = ?
-                     ORDER BY closed_at DESC LIMIT 1"
-                );
-                $stmt->execute([$terminalId, $today]);
-                $row = $stmt->fetch(PDO::FETCH_ASSOC);
-                if ($row) {
+            $sessionShiftId = (int)($_SESSION['pos_shift_id'] ?? 0);
+            if ($complete && !$shift && $sessionShiftId) {
+                $sessionShift = $shiftModel->findById($sessionShiftId);
+                if ($sessionShift
+                    && (int)$sessionShift['terminal_id'] === $terminalId
+                    && $sessionShift['status'] === 'closed'
+                    && !empty($sessionShift['closed_at'])
+                    && substr((string)$sessionShift['closed_at'], 0, 10) === $today) {
                     $needsClose = true;
-                    $closedShiftId = (int)$row['id'];
                 }
             }
 
             echo json_encode([
                 'dayclose_complete' => $complete,
                 'shift_open'        => (bool)$shift,
-                'shift_id'          => $shift ? (int)$shift['id'] : $closedShiftId,
+                'shift_id'          => $shift ? (int)$shift['id'] : ($needsClose ? $sessionShiftId : null),
                 'needs_close'       => $needsClose,
             ]);
             break;
