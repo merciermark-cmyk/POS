@@ -148,6 +148,7 @@ function dispatch(string $url): void {
             $sc = new ShiftController();
             match ($seg1) {
                 'open'    => $sc->open(),
+                'rejoin'  => $sc->rejoin(),
                 'report'  => (function() use ($sc, $seg2) { $_GET['id'] = $seg2; $sc->report(); })(),
                 'edit'    => (function() use ($sc, $seg2) { $_GET['id'] = $seg2; $sc->edit(); })(),
                 'history' => $sc->history(),

@@ -66,6 +66,26 @@ class ShiftController {
         require APP_PATH . '/views/shift/open.php';
     }
 
+    public function rejoin(): void {
+        requireManager();
+        $terminalId = (int)($_COOKIE['pos_terminal_id'] ?? 0);
+        if ($terminalId <= 0) {
+            setFlash('error', 'No terminal cookie on this device. Visit /set-terminal/{id} first.');
+            redirect('/shift/open');
+        }
+        $shiftModel = new Shift();
+        $shift = $shiftModel->getOpenForTerminal($terminalId);
+        if (!$shift) {
+            setFlash('error', "No open shift on terminal $terminalId. Use Open Shift instead.");
+            redirect('/shift/open');
+        }
+        $_SESSION['pos_shift_id']    = (int)$shift['id'];
+        $_SESSION['pos_terminal_id'] = $terminalId;
+        $shiftModel->updateHeartbeat((int)$shift['id'], session_id());
+        setFlash('success', "Rejoined shift #{$shift['id']}.");
+        redirect('/');
+    }
+
     public function report(): void {
         requireAuth();
 
