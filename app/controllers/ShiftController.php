@@ -67,7 +67,7 @@ class ShiftController {
     }
 
     public function rejoin(): void {
-        requireManager();
+        requireAuth();
         $terminalId = (int)($_COOKIE['pos_terminal_id'] ?? 0);
         if ($terminalId <= 0) {
             setFlash('error', 'No terminal cookie on this device. Visit /set-terminal/{id} first.');

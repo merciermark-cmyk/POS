@@ -39,7 +39,6 @@ define('APP_SECRET',  getenv('APP_SECRET') ?: 'changeme');
 define('APP_ENV',     getenv('APP_ENV')    ?: 'production');
 
 // --- Session ---
-define('SESSION_TIMEOUT_DEFAULT', 480); // 8 hours for POS shifts
 define('OPERATOR_TIMEOUT', 45);         // seconds of inactivity before operator cleared (client-side)
 define('RECEIPT_REDIRECT_SECONDS', 5);  // seconds before auto-redirect on receipt page
 

@@ -54,21 +54,7 @@ require_once APP_PATH . '/controllers/DayCloseController.php';
 
 // ── Session ───────────────────────────────────────────────────────────────────
 if (session_status() === PHP_SESSION_NONE) {
-    ini_set('session.gc_maxlifetime', SESSION_TIMEOUT_DEFAULT * 60); // match POS timeout (8 hr)
     session_start();
-}
-
-// Session inactivity timeout (manager session — 8 hr)
-if (isset($_SESSION['pos_user_id'])) {
-    $lastActivity = $_SESSION['last_activity'] ?? time();
-    if ((time() - $lastActivity) > (SESSION_TIMEOUT_DEFAULT * 60)) {
-        session_unset();
-        session_destroy();
-        session_start();
-        $_SESSION['flash_error'] = 'Your session has expired. Please log in again.';
-        redirect('/pin');
-    }
-    $_SESSION['last_activity'] = time();
 }
 
 // Operator timeout is now handled client-side (idle-timer.js)
