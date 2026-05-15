@@ -20,7 +20,7 @@ class DayCloseController {
         ob_start();
         require APP_PATH . '/views/dayclose/index.php';
         $content = ob_get_clean();
-        $scripts = ['public/js/dayclose.js'];
+        $scripts = ['public/js/dayclose.js', 'public/js/dayclose-poll.js'];
         require APP_PATH . '/views/layouts/admin.php';
     }
 
@@ -52,6 +52,7 @@ class DayCloseController {
             ob_start();
             require APP_PATH . '/views/dayclose/locked.php';
             $content = ob_get_clean();
+            $scripts = ['public/js/dayclose-poll.js'];
             require APP_PATH . '/views/layouts/admin.php';
             return;
         }
@@ -77,7 +78,7 @@ class DayCloseController {
         ob_start();
         require APP_PATH . '/views/dayclose/count.php';
         $content = ob_get_clean();
-        $scripts = ['public/js/dayclose.js'];
+        $scripts = ['public/js/dayclose.js', 'public/js/dayclose-poll.js'];
         require APP_PATH . '/views/layouts/admin.php';
     }
 
@@ -102,6 +103,7 @@ class DayCloseController {
         ob_start();
         require APP_PATH . '/views/dayclose/summary.php';
         $content = ob_get_clean();
+        $scripts = ['public/js/dayclose-poll.js'];
         require APP_PATH . '/views/layouts/admin.php';
     }
 
@@ -116,6 +118,7 @@ class DayCloseController {
         ob_start();
         require APP_PATH . '/views/dayclose/history.php';
         $content = ob_get_clean();
+        $scripts = ['public/js/dayclose-poll.js'];
         require APP_PATH . '/views/layouts/admin.php';
     }
 

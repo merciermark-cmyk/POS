@@ -14,6 +14,7 @@ $currentPath = $_GET['url'] ?? '';
     <link rel="stylesheet" href="<?= baseUrl('public/vendor/bootstrap/css/bootstrap.min.css') ?>">
     <link rel="stylesheet" href="<?= baseUrl('public/css/pos.css') ?>">
     <meta name="csrf-token" content="<?= e(generateCsrfToken()) ?>">
+    <meta name="base-url" content="<?= baseUrl() ?>">
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
