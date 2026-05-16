@@ -272,10 +272,11 @@ class Shift extends BaseModel {
     }
 
     public function getHistory(int $limit = 50, ?int $terminalId = null): array {
-        // R3 (terminal_id=3) is the analog register — it has no real transactions,
-        // so Sales/Txns/over_short come from the manual Z-tape entries on
-        // dayclose_counts (joined by close_date). For R1/R2 those fields stay
-        // derived from pos_transactions and pos_shifts.over_short.
+        // R3 (terminal_id=3) is the analog register — no real transactions exist,
+        // so Sales/Txns come from manual Z-tape entries on dayclose_counts (joined
+        // by close_date). over_short / card_over_short are now stored on the R3
+        // synthetic shift row by DayClose::closeShifts(), so they read from
+        // pos_shifts like R1/R2.
         $sql = "SELECT s.*, u.username, tm.name AS terminal_name,
                     cu.username AS closed_by_name,
                     CASE WHEN s.terminal_id = 3 THEN COALESCE(dc.r3_txn_count, 0)
@@ -283,13 +284,7 @@ class Shift extends BaseModel {
                     END AS transaction_count,
                     CASE WHEN s.terminal_id = 3 THEN COALESCE(dc.r3_total_sales, 0)
                          ELSE (SELECT COALESCE(SUM(t.total), 0) FROM pos_transactions t WHERE t.shift_id = s.id AND t.status IN ('completed','partial_refund'))
-                    END AS total_sales,
-                    CASE WHEN s.terminal_id = 3
-                              AND dc.r3_card_batch IS NOT NULL
-                              AND dc.r3_card IS NOT NULL
-                         THEN ROUND(dc.r3_card_batch - dc.r3_card, 2)
-                         ELSE s.over_short
-                    END AS over_short
+                    END AS total_sales
              FROM pos_shifts s
              JOIN pos_users u ON s.user_id = u.id
              LEFT JOIN pos_users cu ON s.closed_by = cu.id

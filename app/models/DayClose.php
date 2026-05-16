@@ -280,8 +280,8 @@ class DayClose extends BaseModel {
         $details = $data['details'];
         $floats  = $data['floats'];
 
-        // Calculate per-register CAD totals for R1 and R2
-        $regTotals = ['r1' => 0.0, 'r2' => 0.0];
+        // Calculate per-register CAD drawer totals for R1, R2, R3 (counted bills + coins)
+        $regTotals = ['r1' => 0.0, 'r2' => 0.0, 'r3' => 0.0];
         foreach ($details as $d) {
             if ($d['denomination_type'] !== 'usd' && isset($regTotals[$d['register']])) {
                 $regTotals[$d['register']] += (float)$d['calculated_amount'];
@@ -360,19 +360,43 @@ class DayClose extends BaseModel {
                             [$terminalId, $date]
                         );
                         if (!$existing) {
-                            // R3 has no real open/close lifecycle — the row is just a record of
-                            // the close-time data entry. Open and close timestamps match.
+                            // R3 reconciliation mirrors Shift::close() for R1/R2:
+                            //   closing_cash    = counted drawer (bills + coins)
+                            //   expected_cash   = opening_float + Z-tape cash sales
+                            //   over_short      = closing_cash − expected_cash
+                            //   closing_card    = Moneris batch (r3_card_batch)
+                            //   expected_card   = Z-tape card sales (r3_card; sum of all CHCK keys)
+                            //   card_over_short = closing_card − expected_card − closing_tips
+                            //                     (pinpad tips inflate batch but not Z-tape)
+                            $floatAmt    = (float)self::FLOAT_TARGETS['r3'];
+                            $countedCash = round((float)$regTotals['r3'], 2);
+                            $zCash       = (float)($data['r3_cash'] ?? 0);
+                            $expectedCash = round($floatAmt + $zCash, 2);
+                            $overShort    = round($countedCash - $expectedCash, 2);
+
+                            $closingCard   = isset($data['r3_card_batch']) ? (float)$data['r3_card_batch'] : null;
+                            $expectedCard  = isset($data['r3_card']) ? (float)$data['r3_card'] : null;
+                            $closingTips   = isset($data['r3_tips']) ? (float)$data['r3_tips'] : null;
+                            $cardOverShort = ($closingCard !== null && $expectedCard !== null)
+                                ? round($closingCard - $expectedCard - ($closingTips ?? 0), 2)
+                                : null;
+
                             $this->execute(
                                 "INSERT INTO pos_shifts
                                     (user_id, closed_by, terminal_id, opened_at, closed_at,
-                                     opening_float, closing_cash, closing_card, closing_tips, cash_deposit,
+                                     opening_float, closing_cash, expected_cash, over_short,
+                                     closing_card, expected_card, card_over_short,
+                                     closing_tips, cash_deposit,
                                      status, notes)
                                  VALUES (?, ?, ?, NOW(), NOW(),
-                                     ?, ?, ?, ?, ?,
+                                     ?, ?, ?, ?,
+                                     ?, ?, ?,
+                                     ?, ?,
                                      'closed', 'Auto-created from Close Registers (R3 analog register)')",
                                 [$closedBy, $closedBy, $terminalId,
-                                 (float)self::FLOAT_TARGETS['r3'],
-                                 $vals['cash'], $vals['card'], $vals['tips'], $vals['deposit']]
+                                 $floatAmt, $countedCash, $expectedCash, $overShort,
+                                 $closingCard, $expectedCard, $cardOverShort,
+                                 $closingTips, $vals['deposit']]
                             );
                         }
                     }
