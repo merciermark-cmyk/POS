@@ -20,6 +20,7 @@
         document.getElementById('changeDisplay').style.display = 'none';
         document.getElementById('quickCashPanel').style.display = 'none';
         document.getElementById('cardAmountPanel').style.display = 'none';
+        document.getElementById('giftCardAmountPanel').style.display = 'none';
         document.getElementById('giftCardPanel').style.display = 'none';
         document.getElementById('usdCashPanel').style.display = 'none';
         hideMonerisPanel();
@@ -38,6 +39,7 @@
             // Hide all panels
             document.getElementById('quickCashPanel').style.display = 'none';
             document.getElementById('cardAmountPanel').style.display = 'none';
+            document.getElementById('giftCardAmountPanel').style.display = 'none';
             document.getElementById('giftCardPanel').style.display = 'none';
             document.getElementById('usdCashPanel').style.display = 'none';
             hideMonerisPanel();
@@ -53,12 +55,8 @@
                 startMonerisPayment();
             } else if (method === 'card') {
                 showCardAmount();
-            } else {
-                // gift_card: add remaining amount
-                const remaining = getRemaining();
-                if (remaining > 0) {
-                    addPayment(method, remaining);
-                }
+            } else if (method === 'gift_card') {
+                showGiftCardAmount();
             }
         });
     });
@@ -240,6 +238,43 @@
             } else if (amt > remaining) {
                 addPayment('card', remaining);
                 document.getElementById('cardAmountPanel').style.display = 'none';
+            }
+        });
+    }
+
+    // ── Gift Card Amount Panel ──────────────────────────────────────
+
+    function showGiftCardAmount() {
+        const remaining = getRemaining();
+        const panel = document.getElementById('giftCardAmountPanel');
+        panel.style.display = 'block';
+
+        document.getElementById('giftCardExactBtn').textContent = 'Exact $' + remaining.toFixed(2);
+        document.getElementById('customGiftCardAmount').value = remaining.toFixed(2);
+    }
+
+    const giftCardExactBtn = document.getElementById('giftCardExactBtn');
+    if (giftCardExactBtn) {
+        giftCardExactBtn.addEventListener('click', function() {
+            const remaining = getRemaining();
+            if (remaining > 0) {
+                addPayment('gift_card', remaining);
+                document.getElementById('giftCardAmountPanel').style.display = 'none';
+            }
+        });
+    }
+
+    const applyCustomGiftCard = document.getElementById('applyCustomGiftCard');
+    if (applyCustomGiftCard) {
+        applyCustomGiftCard.addEventListener('click', function() {
+            const amt = parseFloat(document.getElementById('customGiftCardAmount').value);
+            const remaining = getRemaining();
+            if (amt > 0 && amt <= remaining) {
+                addPayment('gift_card', amt);
+                document.getElementById('giftCardAmountPanel').style.display = 'none';
+            } else if (amt > remaining) {
+                addPayment('gift_card', remaining);
+                document.getElementById('giftCardAmountPanel').style.display = 'none';
             }
         });
     }

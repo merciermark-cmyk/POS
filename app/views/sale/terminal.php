@@ -322,6 +322,20 @@ var POS_MONERIS_TERMINAL_ID = <?= json_encode(($terminal ?? [])['moneris_termina
                             </div>
                         </div>
 
+                        <!-- Gift card amount panel -->
+                        <div id="giftCardAmountPanel" style="display:none">
+                            <label class="form-label fw-bold">Gift Card Amount</label>
+                            <div class="d-flex gap-2 flex-wrap mb-3">
+                                <button class="btn btn-warning btn-lg" id="giftCardExactBtn">Exact</button>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Custom Amount</label>
+                                <input type="number" class="form-control form-control-lg" id="customGiftCardAmount"
+                                       step="0.01" min="0" placeholder="0.00">
+                                <button class="btn btn-warning mt-2" id="applyCustomGiftCard">Apply</button>
+                            </div>
+                        </div>
+
                         <!-- Gift card lookup -->
                         <div id="giftCardPanel" style="display:none">
                             <label class="form-label fw-bold">Web Gift Card Code</label>
