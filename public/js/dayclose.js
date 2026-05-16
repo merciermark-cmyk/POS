@@ -7,6 +7,8 @@ const COINS = {
     toonie:  { weight: 6.92, value: 2.00, label: 'Toonie' },
     loonie:  { weight: 6.27, value: 1.00, label: 'Loonie' },
     quarter: { weight: 4.40, value: 0.25, label: 'Quarter' },
+    dime:    { weight: 1.75, value: 0.10, label: 'Dime' },
+    nickel:  { weight: 3.95, value: 0.05, label: 'Nickel' },
 };
 const BILLS = [100, 50, 20, 10, 5];
 const REGISTERS = [
