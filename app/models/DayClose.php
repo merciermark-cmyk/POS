@@ -32,6 +32,36 @@ class DayClose extends BaseModel {
         return ['count' => $count, 'value' => round($count * $coin['value'], 2)];
     }
 
+    // Sum of counted bills (face-value $) for a register from the details array.
+    private function getRegBillsCounted(array $details, string $reg): float {
+        $total = 0.0;
+        foreach ($details as $d) {
+            if (($d['register'] ?? '') === $reg && ($d['denomination_type'] ?? '') === 'bill') {
+                $total += (int)$d['value'] * (int)$d['denomination'];
+            }
+        }
+        return $total;
+    }
+
+    // FEATURE_SAFE_COIN: write per-register coin-overflow rows to safe_coin_ledger.
+    // Idempotent: removes any prior overflow_in rows for this close before inserting.
+    private function writeCoinOverflowLedger(int $countId, array $coinOverage, ?int $createdBy): void {
+        $this->execute(
+            "DELETE FROM safe_coin_ledger WHERE related_count_id = ? AND type = 'overflow_in'",
+            [$countId]
+        );
+        foreach (['r1', 'r2', 'r3'] as $reg) {
+            $dollars = $coinOverage[$reg] ?? null;
+            if ($dollars === null || $dollars <= 0) continue;
+            $this->insert(
+                "INSERT INTO safe_coin_ledger
+                 (type, denomination, dollars, note, related_count_id, related_register, created_by)
+                 VALUES ('overflow_in', 'mixed', ?, ?, ?, ?, ?)",
+                [$dollars, "Coin overflow from " . strtoupper($reg) . " close", $countId, $reg, $createdBy]
+            );
+        }
+    }
+
     // ── Data access ──────────────────────────────────────────────
     public function getCountByDate(string $date): ?array {
         return $this->findOne(
@@ -170,6 +200,19 @@ class DayClose extends BaseModel {
             $r3Tips       = isset($data['r3_tips']) && $data['r3_tips'] !== '' && $data['r3_tips'] !== null
                 ? round((float)$data['r3_tips'], 2) : null;
 
+            // FEATURE_SAFE_COIN: per-till coin overage going to safe.
+            // Null when client posts null (flag off) — preserves NULL in DB.
+            $safeCoinOn = defined('FEATURE_SAFE_COIN_SYSTEM') && FEATURE_SAFE_COIN_SYSTEM;
+            $coinOverage = ['r1' => null, 'r2' => null, 'r3' => null];
+            if ($safeCoinOn) {
+                foreach (['r1','r2','r3'] as $reg) {
+                    $k = $reg . '_coin_overage';
+                    if (isset($data[$k]) && $data[$k] !== '' && $data[$k] !== null) {
+                        $coinOverage[$reg] = round((float)$data[$k], 2);
+                    }
+                }
+            }
+
             // Server-side recalculate totals (R1+R2 from details, R3 from manual cash)
             $grandCad = 0.0;
             $grandUsd = 0.0;
@@ -213,11 +256,13 @@ class DayClose extends BaseModel {
                      deposit_total = ?, grand_total_cad = ?, grand_total_usd = ?, actual_deposit = ?,
                      r1_card = ?, r1_tips = ?, r2_card = ?, r2_tips = ?, r3_card_batch = ?,
                      r3_total_sales = ?, r3_txn_count = ?, r3_gst = ?, r3_cash = ?, r3_card = ?, r3_tips = ?,
+                     r1_coin_overage = ?, r2_coin_overage = ?, r3_coin_overage = ?,
                      locked_by = NULL, locked_at = NULL, lock_session = NULL,
                      updated_at = NOW() WHERE id = ?",
                     [$staffId, $status, $notes, $depositTotal, $grandCad, $grandUsd, $actualDeposit,
                      $r1Card, $r1Tips, $r2Card, $r2Tips, $r3CardBatch,
                      $r3TotalSales, $r3TxnCount, $r3Gst, $r3Cash, $r3Card, $r3Tips,
+                     $coinOverage['r1'], $coinOverage['r2'], $coinOverage['r3'],
                      $countId]
                 );
                 $this->execute("DELETE FROM dayclose_count_details WHERE count_id = ?", [$countId]);
@@ -227,11 +272,13 @@ class DayClose extends BaseModel {
                     "INSERT INTO dayclose_counts
                      (close_date, closed_by, status, notes, deposit_total, grand_total_cad, grand_total_usd,
                       actual_deposit, r1_card, r1_tips, r2_card, r2_tips, r3_card_batch,
-                      r3_total_sales, r3_txn_count, r3_gst, r3_cash, r3_card, r3_tips)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                      r3_total_sales, r3_txn_count, r3_gst, r3_cash, r3_card, r3_tips,
+                      r1_coin_overage, r2_coin_overage, r3_coin_overage)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     [$date, $staffId, $status, $notes, $depositTotal, $grandCad, $grandUsd, $actualDeposit,
                      $r1Card, $r1Tips, $r2Card, $r2Tips, $r3CardBatch,
-                     $r3TotalSales, $r3TxnCount, $r3Gst, $r3Cash, $r3Card, $r3Tips]
+                     $r3TotalSales, $r3TxnCount, $r3Gst, $r3Cash, $r3Card, $r3Tips,
+                     $coinOverage['r1'], $coinOverage['r2'], $coinOverage['r3']]
                 );
             }
 
@@ -266,6 +313,11 @@ class DayClose extends BaseModel {
                     'deposit_total' => $depositTotal,
                     'closed_by' => $staffId,
                 ]);
+
+                // FEATURE_SAFE_COIN: ledger writes for tonight's coin overflow.
+                if ($safeCoinOn) {
+                    $this->writeCoinOverflowLedger($countId, $coinOverage, $staffId);
+                }
             }
 
             return $countId;
@@ -281,6 +333,7 @@ class DayClose extends BaseModel {
         $shiftModel = new Shift();
         $details = $data['details'];
         $floats  = $data['floats'];
+        $safeCoinOn = defined('FEATURE_SAFE_COIN_SYSTEM') && FEATURE_SAFE_COIN_SYSTEM;
 
         // Calculate per-register CAD drawer totals for R1, R2, R3 (counted bills + coins)
         $regTotals = ['r1' => 0.0, 'r2' => 0.0, 'r3' => 0.0];
@@ -334,8 +387,14 @@ class DayClose extends BaseModel {
                 'cash'    => $data['r3_cash'],
                 'card'    => $data['r3_card'],
                 'tips'    => $data['r3_tips'],
+                // Old mode: deposit = r3_cash − $150 (rough approx from Z-tape).
+                // New mode (FEATURE_SAFE_COIN): deposit = counted bills − $100 (bills only;
+                // coin overage goes to safe, not deposit envelope).
                 'deposit' => $data['r3_cash'] !== null
-                    ? max(0, $data['r3_cash'] - self::FLOAT_TARGETS['r3']) : null,
+                    ? ($safeCoinOn
+                        ? max(0, $this->getRegBillsCounted($details, 'r3') - 100.0)
+                        : max(0, $data['r3_cash'] - self::FLOAT_TARGETS['r3']))
+                    : null,
             ],
         ];
 
@@ -370,7 +429,9 @@ class DayClose extends BaseModel {
                             //   expected_card   = Z-tape card sales (r3_card; sum of all CHCK keys)
                             //   card_over_short = closing_card − expected_card − closing_tips
                             //                     (pinpad tips inflate batch but not Z-tape)
-                            $floatAmt    = (float)self::FLOAT_TARGETS['r3'];
+                            // New mode (FEATURE_SAFE_COIN): R3 float is $100 bills + $100 coin = $200 total.
+                            // Old mode: R3 float was $150 total (bills+coins riding together).
+                            $floatAmt    = $safeCoinOn ? 200.0 : (float)self::FLOAT_TARGETS['r3'];
                             $countedCash = round((float)$regTotals['r3'], 2);
                             $zCash       = (float)($data['r3_cash'] ?? 0);
                             $expectedCash = round($floatAmt + $zCash, 2);

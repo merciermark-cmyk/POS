@@ -16,10 +16,21 @@ const REGISTERS = [
     { id: 'r2', name: 'Tea Bar',   shortName: 'R2', hasTips: true,  hasRegisterTape: false },
     { id: 'r3', name: 'Ice Tea',   shortName: 'R3', hasTips: true,  hasRegisterTape: true  },
 ];
-const FLOAT_TARGETS = { r1: 100, r2: 100, r3: 150 };
+
+// FEATURE FLAG: safe-coin system (injected from PHP via count.php).
+// When true: uniform $100 bills + $100 coin float; coin overage tracked to safe.
+const FEATURE_SAFE_COIN = (typeof window !== 'undefined' && window.FEATURE_SAFE_COIN === true);
+
 // bills_fixed: target is always in bills, coins are extra on top
 // total_fixed: target is total (coins count toward it, bills fill the gap)
-const FLOAT_MODE = { r1: 'bills_fixed', r2: 'bills_fixed', r3: 'total_fixed' };
+// both_fixed:  target is bills AND coins each independently (FEATURE_SAFE_COIN)
+const FLOAT_TARGETS = FEATURE_SAFE_COIN
+    ? { r1: 100, r2: 100, r3: 100 }
+    : { r1: 100, r2: 100, r3: 150 };
+const COIN_TARGET   = FEATURE_SAFE_COIN ? 100 : null;
+const FLOAT_MODE    = FEATURE_SAFE_COIN
+    ? { r1: 'both_fixed', r2: 'both_fixed', r3: 'both_fixed' }
+    : { r1: 'bills_fixed', r2: 'bills_fixed', r3: 'total_fixed' };
 
 // ── STATE ───────────────────────────────────────────
 let state = {
@@ -109,6 +120,13 @@ function getRegCoinTotal(regId) {
 
 function getRegCADTotal(regId) {
     return getRegBillTotal(regId) + getRegCoinTotal(regId);
+}
+
+// Coin overage going to safe (FEATURE_SAFE_COIN only).
+// Returns max(0, coin_total - COIN_TARGET); 0 when flag is off.
+function getRegCoinOverage(regId) {
+    if (!FEATURE_SAFE_COIN) return 0;
+    return Math.max(0, getRegCoinTotal(regId) - COIN_TARGET);
 }
 
 function getGrandCAD() {
@@ -262,6 +280,13 @@ function buildRegisterCard(reg) {
         <span>Coins</span>
         <span id="sub_${reg.id}_coins">$0.00</span>
     </div>`;
+    if (FEATURE_SAFE_COIN) {
+        html += `<div class="overage-row d-flex justify-content-between mt-1 px-2 py-1"
+                  style="background:#fff4d6;border-radius:4px;font-size:0.85rem;">
+            <span><i class="bi bi-arrow-right-circle"></i> To safe (over $${COIN_TARGET})</span>
+            <span class="fw-bold" id="overage_${reg.id}">$0.00</span>
+        </div>`;
+    }
 
     const usdVal = state.count[reg.id].usd || 0;
     html += `<div class="section-header mt-3">US Cash</div>
@@ -395,6 +420,11 @@ function updateCountTotals() {
         });
         const subCoins = document.getElementById(`sub_${reg.id}_coins`);
         if (subCoins) subCoins.textContent = fmt(coinTotal);
+
+        if (FEATURE_SAFE_COIN) {
+            const ovEl = document.getElementById(`overage_${reg.id}`);
+            if (ovEl) ovEl.textContent = fmt(getRegCoinOverage(reg.id));
+        }
 
         const subUsd = document.getElementById(`sub_${reg.id}_usd`);
         if (subUsd) subUsd.textContent = fmt(state.count[reg.id].usd) + ' USD';
@@ -552,7 +582,9 @@ function buildFloatCard(reg) {
     const mode = FLOAT_MODE[reg.id];
     const targetLabel = mode === 'total_fixed'
         ? `Target: ${fmt(target)} total`
-        : `Target: ${fmt(target)} bills`;
+        : (mode === 'both_fixed'
+            ? `Target: ${fmt(target)} bills + ${fmt(COIN_TARGET)} coin`
+            : `Target: ${fmt(target)} bills`);
     let html = `<div class="card shadow-sm h-100">
         <div class="card-header-register">${reg.shortName} — ${reg.name} <span class="ms-2" style="font-weight:400;font-size:0.82rem;">${targetLabel}</span></div>
         <div class="card-body p-3">`;
@@ -575,7 +607,9 @@ function buildFloatCard(reg) {
 
     const coinLabel = mode === 'total_fixed'
         ? 'Coins (toward target)'
-        : 'Coins (extra — stays in register)';
+        : (mode === 'both_fixed'
+            ? `Coins (target ${fmt(COIN_TARGET)}, excess to safe)`
+            : 'Coins (extra — stays in register)');
     html += `<div class="section-header mt-3">${coinLabel}</div>`;
     Object.entries(COINS).forEach(([key, c]) => {
         const r = coinCalc(state.count[reg.id].coins[key] || 0, key);
@@ -626,7 +660,9 @@ function updateFloatTotals() {
 
         const isGood = mode === 'total_fixed'
             ? floatTotal >= target
-            : banknoteTotal >= target;
+            : (mode === 'both_fixed'
+                ? (banknoteTotal >= target && coinTotal >= COIN_TARGET)
+                : banknoteTotal >= target);
 
         const subBills = document.getElementById(`fsub_${reg.id}_bills`);
         if (subBills) subBills.innerHTML = fmt(banknoteTotal) + (isGood
@@ -636,7 +672,23 @@ function updateFloatTotals() {
 
         const warn = document.getElementById(`float_${reg.id}_warning`);
         if (warn) {
-            if (floatTotal < target) {
+            if (mode === 'both_fixed') {
+                if (banknoteTotal < target) {
+                    const gap = target - banknoteTotal;
+                    warn.innerHTML = `<div class="alert alert-warning py-1 px-2 mt-2 mb-0 small">
+                        <strong>Bills short ${fmt(gap)}</strong> — need to buy from another till</div>`;
+                } else if (coinTotal < COIN_TARGET) {
+                    const gap = COIN_TARGET - coinTotal;
+                    warn.innerHTML = `<div class="alert alert-warning py-1 px-2 mt-2 mb-0 small">
+                        <strong>Coins short ${fmt(gap)}</strong> — need more coin for next-day float</div>`;
+                } else if (coinTotal > COIN_TARGET) {
+                    const excess = coinTotal - COIN_TARGET;
+                    warn.innerHTML = `<div class="alert alert-info py-1 px-2 mt-2 mb-0 small">
+                        <i class="bi bi-arrow-right-circle"></i> <strong>${fmt(excess)}</strong> in coins going to safe</div>`;
+                } else {
+                    warn.innerHTML = '';
+                }
+            } else if (floatTotal < target) {
                 const short = target - floatTotal;
                 warn.innerHTML = `<div class="alert alert-warning py-1 px-2 mt-2 mb-0 small">
                     <strong>Short ${fmt(short)}</strong> — need to buy from another till</div>`;
@@ -781,6 +833,11 @@ function submitClose() {
         r3_gst: state.registerTape.gst || null,
         r3_cash: state.registerTape.cash_sales || null,
         r3_card: state.registerTape.card_sales || null,
+        // FEATURE_SAFE_COIN: per-till coin overage going to safe.
+        // Null when flag is off — server-side save skips ledger writes.
+        r1_coin_overage: FEATURE_SAFE_COIN ? getRegCoinOverage('r1') : null,
+        r2_coin_overage: FEATURE_SAFE_COIN ? getRegCoinOverage('r2') : null,
+        r3_coin_overage: FEATURE_SAFE_COIN ? getRegCoinOverage('r3') : null,
     };
 
     const btn = document.querySelector('#screenFloat .btn-tan');

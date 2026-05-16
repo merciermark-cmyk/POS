@@ -110,6 +110,7 @@
     const BASE_URL = <?= json_encode(baseUrl()) ?>;
     const CSRF_TOKEN = <?= json_encode(generateCsrfToken()) ?>;
     const PREFILL = <?= json_encode($prefill) ?>;
+    window.FEATURE_SAFE_COIN = <?= defined('FEATURE_SAFE_COIN_SYSTEM') && FEATURE_SAFE_COIN_SYSTEM ? 'true' : 'false' ?>;
     // Set initial state (only used if no PREFILL)
     if (typeof PREFILL === 'undefined' || !PREFILL) {
         var DC_INIT_DATE       = <?= json_encode($date) ?>;
