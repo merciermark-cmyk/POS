@@ -61,6 +61,10 @@ $currentPath = $_GET['url'] ?? '';
                             <li><a class="dropdown-item" href="<?= baseUrl('modifiers') ?>">Modifiers</a></li>
                             <li><a class="dropdown-item" href="<?= baseUrl('images') ?>">Product Images</a></li>
                             <li><a class="dropdown-item" href="<?= baseUrl('settings') ?>">Settings</a></li>
+                            <?php if (defined('FEATURE_SAFE_COIN_SYSTEM') && FEATURE_SAFE_COIN_SYSTEM): ?>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="<?= baseUrl('safe-coins') ?>">Safe Coins</a></li>
+                            <?php endif; ?>
                         </ul>
                     </li>
                     <?php endif; ?>

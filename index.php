@@ -30,6 +30,7 @@ require_once APP_PATH . '/models/Moneris.php';
 require_once APP_PATH . '/models/GiftCardSale.php';
 require_once APP_PATH . '/models/ScheduleAttendance.php';
 require_once APP_PATH . '/models/DayClose.php';
+require_once APP_PATH . '/models/SafeCoinLedger.php';
 
 // Helpers
 require_once APP_PATH . '/helpers/csrf_helper.php';
@@ -52,6 +53,7 @@ require_once APP_PATH . '/controllers/ManualEntryController.php';
 require_once APP_PATH . '/controllers/TempAuthController.php';
 require_once APP_PATH . '/controllers/ApiController.php';
 require_once APP_PATH . '/controllers/DayCloseController.php';
+require_once APP_PATH . '/controllers/SafeCoinsController.php';
 
 // ── Session ───────────────────────────────────────────────────────────────────
 if (session_status() === PHP_SESSION_NONE) {
@@ -417,6 +419,20 @@ function dispatch(string $url): void {
                 'heartbeat'    => $dcc->heartbeat(),
                 'release-lock' => $dcc->releaseLock(),
                 default        => $dcc->index(),
+            };
+            break;
+
+        case 'safe-coins':
+            // Flag-gated: route returns 404 when FEATURE_SAFE_COIN_SYSTEM is off.
+            if (!defined('FEATURE_SAFE_COIN_SYSTEM') || !FEATURE_SAFE_COIN_SYSTEM) {
+                http_response_code(404);
+                echo '<h1>404 Not Found</h1><p><a href="/">Go home</a></p>';
+                break;
+            }
+            $scc = new SafeCoinsController();
+            match ($seg1) {
+                'add'   => $scc->add(),
+                default => $scc->index(),
             };
             break;
 
