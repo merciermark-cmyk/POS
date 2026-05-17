@@ -186,13 +186,13 @@ ob_start();
                                 <?php foreach ($items as $item): ?>
                                     <?php
                                     $refQty = $refundedQtys[(int)$item['id']] ?? 0;
-                                    $maxRefundable = (int)$item['quantity'] - $refQty;
+                                    $maxRefundable = (float)$item['quantity'] - $refQty;
                                     if ($maxRefundable <= 0) continue;
                                     ?>
                                     <div class="d-flex align-items-center gap-2 mb-2">
                                         <input type="number" name="refund_qty[<?= $item['id'] ?>]"
                                                class="form-control refund-qty" style="width:70px"
-                                               min="0" max="<?= $maxRefundable ?>" value="0"
+                                               min="0" max="<?= $maxRefundable ?>" step="0.01" value="0"
                                                data-unit-price="<?= $item['unit_price'] ?>"
                                                data-tax-profile="<?= e($item['tax_profile']) ?>"
                                                onchange="updateRefundTotal()" oninput="updateRefundTotal()">

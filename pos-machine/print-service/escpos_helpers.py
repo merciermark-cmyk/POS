@@ -153,7 +153,8 @@ def build_receipt(data: dict) -> bytes:
     # Items
     for item in data.get('items', []):
         name = str(item.get('name', ''))[:30]
-        qty = int(item.get('quantity', 1))
+        qty_raw = float(item.get('quantity', 1))
+        qty = f'{qty_raw:.2f}'.rstrip('0').rstrip('.')
         price = float(item.get('unit_price', 0))
         total = float(item.get('line_total', 0))
 

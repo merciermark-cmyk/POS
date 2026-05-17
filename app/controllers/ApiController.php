@@ -294,7 +294,7 @@ class ApiController {
                 'cashier'       => $transaction['username'] ?? '',
                 'items'         => array_map(fn($i) => [
                     'name'             => $i['product_name'],
-                    'quantity'         => (int)$i['quantity'],
+                    'quantity'         => (float)$i['quantity'],
                     'unit_price'       => (float)$i['unit_price'],
                     'line_total'       => (float)$i['line_total'],
                     'gst'              => (float)$i['gst'],

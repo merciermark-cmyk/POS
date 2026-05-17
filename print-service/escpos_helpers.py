@@ -93,7 +93,8 @@ def build_receipt(txn_data: dict, change: float = 0) -> bytes:
     # Items
     for item in items:
         name = item['product_name'][:30]
-        qty = int(item['quantity'])
+        qty_raw = float(item['quantity'])
+        qty = f'{qty_raw:.2f}'.rstrip('0').rstrip('.')
         price = float(item['unit_price'])
         total = float(item['line_total'])
 
