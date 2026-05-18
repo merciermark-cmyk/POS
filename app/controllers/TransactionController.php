@@ -131,7 +131,7 @@ class TransactionController {
         $refundItems = [];
         $refundQtys = $_POST['refund_qty'] ?? [];
         foreach ($refundQtys as $itemId => $qty) {
-            $qty = (int)$qty;
+            $qty = (float)$qty;
             if ($qty > 0) {
                 $refundItems[] = ['item_id' => (int)$itemId, 'quantity' => $qty];
             }

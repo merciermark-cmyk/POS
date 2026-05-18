@@ -265,7 +265,7 @@ function printReceipt(txnId) {
 function updateRefundTotal() {
     var total = 0;
     document.querySelectorAll('.refund-qty').forEach(function(el) {
-        var qty = parseInt(el.value) || 0;
+        var qty = parseFloat(el.value) || 0;
         if (qty <= 0) return;
         var price = parseFloat(el.dataset.unitPrice) || 0;
         var profile = el.dataset.taxProfile;
