@@ -15,11 +15,20 @@
         .search-bar {
             position: sticky; top: 0; z-index: 10;
             background: #f8f9fa; padding: 12px 16px 8px;
+            display: flex; align-items: center; gap: 10px;
         }
         .search-bar input {
             font-size: 16px; /* prevents iOS/Android zoom */
             padding: 14px 16px;
             border-radius: 12px;
+            flex: 1;
+        }
+        .btn-back {
+            min-width: 56px; height: 52px;
+            font-size: 1.4rem; font-weight: 700;
+            border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
         }
 
         .product-area {
@@ -80,6 +89,7 @@
 <body>
 
 <div class="search-bar">
+    <button type="button" class="btn btn-outline-secondary btn-back" id="backBtn" title="Back to POS">&larr;</button>
     <input type="search" class="form-control form-control-lg" id="searchInput"
            placeholder="Search loose teas..." autocomplete="off" autofocus>
 </div>
@@ -226,6 +236,20 @@ function esc(str) {
     d.textContent = str;
     return d.innerHTML;
 }
+
+// Back to POS — kiosk Chrome opens this in a new tab with no history and HTTPS→HTTP
+// strips the referer, so we try window.close() (works when opener was preserved) and
+// fall back to navigating to the POS app if close fails.
+document.getElementById('backBtn').addEventListener('click', function() {
+    if (window.history.length > 1) {
+        window.history.back();
+        return;
+    }
+    try { window.close(); } catch (e) {}
+    setTimeout(function() {
+        window.location.href = 'https://pos.granvilletea.com/';
+    }, 150);
+});
 
 // Initial load
 loadProducts('');
