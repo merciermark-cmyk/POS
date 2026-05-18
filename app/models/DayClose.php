@@ -309,6 +309,12 @@ class DayClose extends BaseModel {
                     'r1_card' => $r1Card, 'r1_tips' => $r1Tips,
                     'r2_card' => $r2Card, 'r2_tips' => $r2Tips,
                     'r3_cash' => $r3Cash, 'r3_card' => $r3Card, 'r3_tips' => $r3Tips,
+                    // R3 Z-tape fields — required by upsertR3Transaction (Daily Sales mirror)
+                    // and by the R3 pos_shifts auto-insert (closing_card from card batch).
+                    'r3_total_sales' => $r3TotalSales,
+                    'r3_gst'         => $r3Gst,
+                    'r3_txn_count'   => $r3TxnCount,
+                    'r3_card_batch'  => $r3CardBatch,
                     'details' => $details, 'floats' => $floats,
                     'deposit_total' => $depositTotal,
                     'closed_by' => $staffId,
@@ -420,7 +426,10 @@ class DayClose extends BaseModel {
                              ORDER BY id DESC LIMIT 1",
                             [$terminalId, $date]
                         );
-                        if (!$existing) {
+                        $r3ShiftId = null;
+                        if ($existing) {
+                            $r3ShiftId = (int)$existing['id'];
+                        } else {
                             // R3 reconciliation mirrors Shift::close() for R1/R2:
                             //   closing_cash    = counted drawer (bills + coins)
                             //   expected_cash   = opening_float + Z-tape cash sales
@@ -444,7 +453,7 @@ class DayClose extends BaseModel {
                                 ? round($closingCard - $expectedCard - ($closingTips ?? 0), 2)
                                 : null;
 
-                            $this->execute(
+                            $r3ShiftId = (int)$this->insert(
                                 "INSERT INTO pos_shifts
                                     (user_id, closed_by, terminal_id, opened_at, closed_at,
                                      opening_float, closing_cash, expected_cash, over_short,
@@ -461,6 +470,12 @@ class DayClose extends BaseModel {
                                  $closingCard, $expectedCard, $cardOverShort,
                                  $closingTips, $vals['deposit']]
                             );
+                        }
+
+                        // Mirror R3 dayclose data into pos_transactions so it shows in
+                        // Daily Sales reports (which read only from pos_transactions).
+                        if ($r3ShiftId !== null) {
+                            $this->upsertR3Transaction($r3ShiftId, $terminalId, $date, $data, $closedBy);
                         }
                     }
                     continue;
@@ -479,6 +494,70 @@ class DayClose extends BaseModel {
                 error_log("Close Registers closeShifts ($reg) failed: " . $e->getMessage());
             }
         }
+    }
+
+    // ── R3 transaction mirror ─────────────────────────────────────
+    // Mirror R3 register-tape data into pos_transactions + pos_payments
+    // so Daily Sales reports (which only read pos_transactions) include R3.
+    // Idempotent: delete any prior synthetic R3 txn for this shift before insert.
+    private function upsertR3Transaction(int $shiftId, int $terminalId, string $date, array $data, ?int $closedBy): void {
+        $total = isset($data['r3_total_sales']) && $data['r3_total_sales'] !== null
+            ? round((float)$data['r3_total_sales'], 2) : null;
+        if ($total === null || $total <= 0) return; // nothing to mirror
+
+        $gst      = isset($data['r3_gst']) && $data['r3_gst'] !== null ? round((float)$data['r3_gst'], 2) : 0.0;
+        $subtotal = round($total - $gst, 2); // R3 = iced tea, GST-only (no PST)
+        $cash     = isset($data['r3_cash']) && $data['r3_cash'] !== null ? round((float)$data['r3_cash'], 2) : 0.0;
+        $card     = isset($data['r3_card']) && $data['r3_card'] !== null ? round((float)$data['r3_card'], 2) : 0.0;
+        $tips     = isset($data['r3_tips']) && $data['r3_tips'] !== null ? round((float)$data['r3_tips'], 2) : null;
+        $txnCount = isset($data['r3_txn_count']) && $data['r3_txn_count'] !== null ? (int)$data['r3_txn_count'] : null;
+        $createdAt = $date . ' ' . date('H:i:s');
+
+        // Idempotency: remove any prior synthetic R3 txn on this shift
+        $prior = $this->findOne(
+            "SELECT id FROM pos_transactions WHERE shift_id = ? AND terminal_id = ? LIMIT 1",
+            [$shiftId, $terminalId]
+        );
+        if ($prior) {
+            $this->execute("DELETE FROM pos_payments WHERE transaction_id = ?", [$prior['id']]);
+            $this->execute("DELETE FROM pos_transactions WHERE id = ?", [$prior['id']]);
+        }
+
+        $txnId = (int)$this->insert(
+            "INSERT INTO pos_transactions
+             (shift_id, terminal_id, user_id, subtotal, gst_amount, pst_amount, tip_amount, total,
+              status, is_manual_entry, transaction_count, notes, created_at)
+             VALUES (?, ?, ?, ?, ?, 0, ?, ?, 'completed', 1, ?, ?, ?)",
+            [$shiftId, $terminalId, $closedBy, $subtotal, $gst, $tips, $total, $txnCount,
+             'Auto-created from Close Registers (R3 register tape)', $createdAt]
+        );
+
+        if ($cash > 0) {
+            $this->insert(
+                "INSERT INTO pos_payments (transaction_id, method, amount) VALUES (?, 'cash', ?)",
+                [$txnId, $cash]
+            );
+        }
+        if ($card > 0) {
+            $this->insert(
+                "INSERT INTO pos_payments (transaction_id, method, amount) VALUES (?, 'card', ?)",
+                [$txnId, $card]
+            );
+        }
+
+        // Set daily/monthly/annual counters (matches Transaction::updateCounters logic
+        // but uses the txn's own created_at date, not CURDATE, so it works for back-dated closes).
+        $counters = $this->findOne(
+            "SELECT
+                (SELECT COUNT(*) FROM pos_transactions WHERE status = 'completed' AND DATE(created_at) = DATE(?) AND id < ?) + 1 AS daily_number,
+                (SELECT COUNT(*) FROM pos_transactions WHERE status = 'completed' AND YEAR(created_at) = YEAR(?) AND MONTH(created_at) = MONTH(?) AND id < ?) + 1 AS monthly_number,
+                (SELECT COUNT(*) FROM pos_transactions WHERE status = 'completed' AND YEAR(created_at) = YEAR(?) AND id < ?) + 1 AS annual_number",
+            [$createdAt, $txnId, $createdAt, $createdAt, $txnId, $createdAt, $txnId]
+        );
+        $this->execute(
+            "UPDATE pos_transactions SET daily_number = ?, monthly_number = ?, annual_number = ? WHERE id = ?",
+            [(int)$counters['daily_number'], (int)$counters['monthly_number'], (int)$counters['annual_number'], $txnId]
+        );
     }
 
     // ── Shift reconciliation for summary ─────────────────────────
