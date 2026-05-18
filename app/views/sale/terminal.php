@@ -33,7 +33,9 @@ var POS_MONERIS_TERMINAL_ID = <?= json_encode(($terminal ?? [])['moneris_termina
                     <i class="bi bi-box-arrow-up"></i>
                 </button>
                 <button class="btn btn-warning btn-sm fw-bold" id="adminMenuBtn">Admin</button>
-                <a href="https://labels.granvilletea.com" target="_blank" class="btn btn-outline-light btn-sm">Labels</a>
+                <?php if ((int)($_COOKIE['pos_terminal_id'] ?? 0) === 1): ?>
+                    <a href="http://192.168.0.148:5000/label" target="_blank" class="btn btn-outline-light btn-sm">Labels</a>
+                <?php endif; ?>
                 <a href="<?= baseUrl('transactions') ?>" class="btn btn-outline-light btn-sm">History</a>
                 <a href="<?= baseUrl('switch-user') ?>" class="btn btn-outline-info btn-sm">Switch User</a>
                 <button class="btn btn-outline-light btn-sm" id="fullScreenToggle"></button>

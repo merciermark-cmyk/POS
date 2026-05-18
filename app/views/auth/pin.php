@@ -39,7 +39,9 @@
         </form>
 
         <div class="mt-3 d-flex flex-column align-items-center gap-2">
-            <a href="https://labels.granvilletea.com" target="_blank" class="btn btn-outline-secondary btn-sm">Print Labels</a>
+            <?php if ((int)($_COOKIE['pos_terminal_id'] ?? 0) === 1): ?>
+                <a href="http://192.168.0.148:5000/label" target="_blank" class="btn btn-outline-secondary btn-sm">Print Labels</a>
+            <?php endif; ?>
             <a href="<?= baseUrl('login') ?>" class="text-muted small">Use password instead</a>
         </div>
     </div>
