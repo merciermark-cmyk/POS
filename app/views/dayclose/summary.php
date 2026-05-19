@@ -74,6 +74,24 @@ foreach ($floats as $f) {
         <h4 class="mt-2" style="color:var(--olive);font-weight:700;">Close Submitted</h4>
     </div>
 
+    <?php
+    // Surface per-register closeShifts() failures (was silent error_log before 2026-05-18).
+    // Non-null close_errors means one or more registers' shifts did not close cleanly even
+    // though the count itself saved fine. Manager should investigate before leaving.
+    $closeErrorsRaw = $count['close_errors'] ?? null;
+    $closeErrorsList = $closeErrorsRaw ? (json_decode($closeErrorsRaw, true) ?: []) : [];
+    if (!empty($closeErrorsList)): ?>
+    <div class="alert alert-warning" role="alert" style="border-left:4px solid #ffc107;">
+        <strong><i class="bi bi-exclamation-triangle-fill"></i> Shift close warnings</strong>
+        <div class="small mt-1">The count saved, but the following shifts did not close cleanly. Check Shift History and confirm each terminal is closed before leaving.</div>
+        <ul class="mb-0 mt-2 small">
+            <?php foreach ($closeErrorsList as $err): ?>
+                <li><strong><?= e(strtoupper($err['register'] ?? '?')) ?>:</strong> <?= e($err['message'] ?? '(no message)') ?></li>
+            <?php endforeach; ?>
+        </ul>
+    </div>
+    <?php endif; ?>
+
     <!-- Header -->
     <div class="summary-section text-center">
         <h6 class="fw-bold" style="color:var(--olive);">Close Registers — Summary</h6>

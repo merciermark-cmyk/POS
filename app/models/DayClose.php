@@ -252,11 +252,12 @@ class DayClose extends BaseModel {
             if ($existing) {
                 $countId = (int)$existing['id'];
                 $this->execute(
-                    "UPDATE dayclose_counts SET closed_by = ?, status = ?, notes = ?,
+                    "UPDATE dayclose_counts SET closed_by = ?, closed_by_table = 'pos_users', status = ?, notes = ?,
                      deposit_total = ?, grand_total_cad = ?, grand_total_usd = ?, actual_deposit = ?,
                      r1_card = ?, r1_tips = ?, r2_card = ?, r2_tips = ?, r3_card_batch = ?,
                      r3_total_sales = ?, r3_txn_count = ?, r3_gst = ?, r3_cash = ?, r3_card = ?, r3_tips = ?,
                      r1_coin_overage = ?, r2_coin_overage = ?, r3_coin_overage = ?,
+                     close_errors = NULL,
                      locked_by = NULL, locked_at = NULL, lock_session = NULL,
                      updated_at = NOW() WHERE id = ?",
                     [$staffId, $status, $notes, $depositTotal, $grandCad, $grandUsd, $actualDeposit,
@@ -270,11 +271,11 @@ class DayClose extends BaseModel {
             } else {
                 $countId = (int)$this->insert(
                     "INSERT INTO dayclose_counts
-                     (close_date, closed_by, status, notes, deposit_total, grand_total_cad, grand_total_usd,
+                     (close_date, closed_by, closed_by_table, status, notes, deposit_total, grand_total_cad, grand_total_usd,
                       actual_deposit, r1_card, r1_tips, r2_card, r2_tips, r3_card_batch,
                       r3_total_sales, r3_txn_count, r3_gst, r3_cash, r3_card, r3_tips,
                       r1_coin_overage, r2_coin_overage, r3_coin_overage)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     VALUES (?, ?, 'pos_users', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     [$date, $staffId, $status, $notes, $depositTotal, $grandCad, $grandUsd, $actualDeposit,
                      $r1Card, $r1Tips, $r2Card, $r2Tips, $r3CardBatch,
                      $r3TotalSales, $r3TxnCount, $r3Gst, $r3Cash, $r3Card, $r3Tips,
@@ -303,9 +304,11 @@ class DayClose extends BaseModel {
 
             $this->commit();
 
-            // Close all shifts only on complete (non-fatal)
+            // Close all shifts only on complete (non-fatal — per-register errors are
+            // collected into close_errors so they surface in the summary view rather
+            // than disappearing into error_log like the 2026-05-10 silent R3 failure).
             if ($complete) {
-                $this->closeShifts($date, [
+                $closeErrors = $this->closeShifts($date, [
                     'r1_card' => $r1Card, 'r1_tips' => $r1Tips,
                     'r2_card' => $r2Card, 'r2_tips' => $r2Tips,
                     'r3_cash' => $r3Cash, 'r3_card' => $r3Card, 'r3_tips' => $r3Tips,
@@ -319,6 +322,13 @@ class DayClose extends BaseModel {
                     'deposit_total' => $depositTotal,
                     'closed_by' => $staffId,
                 ]);
+
+                if (!empty($closeErrors)) {
+                    $this->execute(
+                        "UPDATE dayclose_counts SET close_errors = ? WHERE id = ?",
+                        [json_encode($closeErrors), $countId]
+                    );
+                }
 
                 // FEATURE_SAFE_COIN: ledger writes for tonight's coin overflow.
                 if ($safeCoinOn) {
@@ -335,7 +345,11 @@ class DayClose extends BaseModel {
     }
 
     // ── Close all shifts via Shift::close() ────────────────────────
-    private function closeShifts(string $date, array $data): void {
+    // Returns array of ['register' => 'r1'|'r2'|'r3', 'message' => string] for any
+    // per-register failures. Caller (saveCount) persists these to dayclose_counts.close_errors
+    // so the summary view can surface them — replaces the pre-2026-05-18 silent error_log path.
+    private function closeShifts(string $date, array $data): array {
+        $errors = [];
         $shiftModel = new Shift();
         $details = $data['details'];
         $floats  = $data['floats'];
@@ -492,8 +506,10 @@ class DayClose extends BaseModel {
                 );
             } catch (\Throwable $e) {
                 error_log("Close Registers closeShifts ($reg) failed: " . $e->getMessage());
+                $errors[] = ['register' => $reg, 'message' => $e->getMessage()];
             }
         }
+        return $errors;
     }
 
     // ── R3 transaction mirror ─────────────────────────────────────
@@ -589,8 +605,8 @@ class DayClose extends BaseModel {
             );
         } else {
             $this->insert(
-                "INSERT INTO dayclose_counts (close_date, closed_by, status, locked_by, locked_at, lock_session)
-                 VALUES (?, ?, 'open', ?, NOW(), ?)",
+                "INSERT INTO dayclose_counts (close_date, closed_by, closed_by_table, status, locked_by, locked_at, lock_session)
+                 VALUES (?, ?, 'pos_users', 'open', ?, NOW(), ?)",
                 [$date, $userId, $userId, $sessionId]
             );
         }
