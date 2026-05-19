@@ -8,6 +8,26 @@ class ShiftController {
         $terminalModel = new Terminal();
         $user          = currentUser();
 
+        // Auto-rejoin: terminal has an open DB shift but session lost the binding
+        // (Chrome restart wipes the PHPSESSID session-cookie while the 10-year
+        // pos_terminal_id cookie survives — see [[pos-session-config]]). Restore
+        // the session keys server-side and redirect to /sale so staff never see
+        // the grey-badge dead end on /shift/open. Only on GET — POST means user
+        // is actively trying to open a NEW shift.
+        if ($_SERVER['REQUEST_METHOD'] === 'GET' && empty($_SESSION['pos_shift_id'])) {
+            $cookieTerminalId = (int)($_COOKIE['pos_terminal_id'] ?? 0);
+            if ($cookieTerminalId > 0) {
+                $openShift = $shiftModel->getOpenForTerminal($cookieTerminalId);
+                if ($openShift) {
+                    $_SESSION['pos_shift_id']    = (int)$openShift['id'];
+                    $_SESSION['pos_terminal_id'] = $cookieTerminalId;
+                    $shiftModel->updateHeartbeat((int)$openShift['id'], session_id());
+                    redirect('/');
+                    return;
+                }
+            }
+        }
+
         // Block opening a second shift if one is already active in this session
         $existingShiftId = $_SESSION['pos_shift_id'] ?? null;
         if ($existingShiftId) {
